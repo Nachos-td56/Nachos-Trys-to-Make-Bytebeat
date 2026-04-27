@@ -16,11 +16,9 @@ function compile(code) {
   };
 
   return function(tt) {
-    try {
-      const t = tt;
+    with (scope) {
+      t = tt;
       return eval(code);
-    } catch {
-      return 0;
     }
   };
 }
