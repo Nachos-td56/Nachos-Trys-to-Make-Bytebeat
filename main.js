@@ -17,10 +17,5 @@ document.getElementById("play").onclick = async () => {
   });
 };
 
-document.getElementById("stop").onclick = () => {
-  if (node) node.disconnect();
-};
-
-document.getElementById("reset").onclick = () => {
-  if (node) node.port.postMessage({ reset: true });
-};
+document.getElementById("stop").onclick = () => node && node.disconnect();
+document.getElementById("reset").onclick = () => node && node.port.postMessage({ reset: true });
