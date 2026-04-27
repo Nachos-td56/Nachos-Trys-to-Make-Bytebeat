@@ -1,19 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Bytebeat</title>
+<meta charset="UTF-8" />
+<title>Bytebeat Studio</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<textarea id="code">t</textarea>
-<br>
-<input id="rate" type="number" value="8000">
-<button id="play">Play</button>
-<button id="stop">Stop</button>
-<button id="reset">Reset</button>
+<div class="card">
+  <h1>Bytebeat / Floatbeat</h1>
+
+  <textarea id="code">t * ((t>>12|t>>8)&63&t>>4)</textarea>
+
+  <div class="controls">
+    <label>Sample Rate
+      <input id="rate" type="number" value="8000">
+    </label>
+
+    <button id="play">Play</button>
+    <button id="stop">Stop</button>
+    <button id="reset">Reset</button>
+  </div>
+</div>
 
 <script src="main.js"></script>
-
 </body>
 </html>
