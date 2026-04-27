@@ -5,20 +5,34 @@ let func;
 let playing = false;
 
 function compile(code) {
-  const scope = {
+  const state = {
+    a: "",
+    b: 0,
+    c: 0,
     sin: Math.sin,
     cos: Math.cos,
     tan: Math.tan,
     abs: Math.abs,
     pow: Math.pow,
     floor: Math.floor,
-    random: Math.random
+    random: Math.random,
+    cbrt: Math.cbrt
   };
 
-  return function(tt) {
-    with (scope) {
-      t = tt;
-      return eval(code);
+  return function (t) {
+    try {
+      // wrap code in persistent scope
+      return Function(
+        "t",
+        "state",
+        `
+        with (state) {
+          return (${code});
+        }
+        `
+      )(t, state);
+    } catch {
+      return 0;
     }
   };
 }
