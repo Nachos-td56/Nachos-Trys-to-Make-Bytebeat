@@ -5,7 +5,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
     this.t = 0;
     this.step = 1;
 
-    // GLOBAL SCRIPT ENVIRONMENT (i stg if this doesnt fix it)
+    // persistent shared state (IMPORTANT)
     this.env = {
       ec: new Array(12288).fill(0),
       A: [],
@@ -18,7 +18,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       floor: Math.floor
     };
 
-    this.runner = () => 0;
+    this.fn = () => 0;
 
     this.port.onmessage = (e) => {
       if (e.data.reset) {
@@ -38,20 +38,20 @@ class BytebeatProcessor extends AudioWorkletProcessor {
   }
 
   compile(code) {
-    // THIS is now SCRIPT MODE execution
+    // SAFE single-function compiler (no nested eval chains)
     try {
-      const fn = new Function("env", `
-        const { ec, A, n, random, sin, cos, tan, abs, floor } = env;
+      this.fn = new Function("t", "env", `
+        const {
+          ec, A, n,
+          random, sin, cos, tan, abs, floor
+        } = env;
 
-        return function(t) {
+        return (function() {
           ${code}
-          return 0;
-        };
+        })();
       `);
-
-      this.runner = fn(this.env);
     } catch (e) {
-      this.runner = () => 0;
+      this.fn = () => 0;
     }
   }
 
@@ -63,7 +63,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       let v = 0;
 
       try {
-        v = this.runner(this.t);
+        v = this.fn(this.t, this.env);
       } catch {
         v = 0;
       }
@@ -75,6 +75,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         r = v[1];
       }
 
+      // normalize
       if (l > 1 || l < -1) l = ((l & 255) / 128) - 1;
       if (r > 1 || r < -1) r = ((r & 255) / 128) - 1;
 
