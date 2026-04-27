@@ -1,78 +1,45 @@
-let ctx, processor;
+let ctx, node;
 let t = 0;
 let step = 1;
-let func;
-let playing = false;
+let fn;
 
 function compile(code) {
-  // classic bytebeat environment (non-strict, eval allowed)
-  const scope = {
-    sin: Math.sin,
-    cos: Math.cos,
-    tan: Math.tan,
-    abs: Math.abs,
-    pow: Math.pow,
-    floor: Math.floor,
-    random: Math.random
-  };
+  // Build function ONCE (not per sample)
+  return new Function("t", `
+    const sin=Math.sin, cos=Math.cos, tan=Math.tan;
+    const abs=Math.abs, pow=Math.pow, floor=Math.floor;
 
-  return function(tt) {
-    with (scope) {
-      t = tt;
-      return eval(code);
-    }
-  };
+    let random = Math.random;
+
+    return (${code});
+  `);
 }
 
-function start() {
-  if (playing) return;
+async function start() {
+  if (ctx) await ctx.close();
 
   ctx = new AudioContext();
   const rate = Number(document.getElementById("rate").value);
   step = rate / ctx.sampleRate;
 
-  func = compile(document.getElementById("code").value);
+  await ctx.audioWorklet.addModule("worklet.js");
 
-  const bufferSize = 1024;
-  processor = ctx.createScriptProcessor(bufferSize, 0, 2);
+  fn = compile(document.getElementById("code").value);
 
-  processor.onaudioprocess = (e) => {
-    const L = e.outputBuffer.getChannelData(0);
-    const R = e.outputBuffer.getChannelData(1);
+  node = new AudioWorkletNode(ctx, "bytebeat");
 
-    for (let i = 0; i < bufferSize; i++) {
-      let v;
-      try {
-        v = func(t);
-      } catch {
-        v = 0;
-      }
+  node.port.postMessage({ fn: fn.toString(), step });
 
-      let l, r;
-      if (Array.isArray(v)) [l, r] = v;
-      else l = r = v;
-
-      if (l > 1 || l < -1) l = ((l & 255) / 128) - 1;
-      if (r > 1 || r < -1) r = ((r & 255) / 128) - 1;
-
-      L[i] = l;
-      R[i] = r;
-
-      t += step;
-    }
-  };
-
-  processor.connect(ctx.destination);
-  playing = true;
-}
-
-function stop() {
-  if (!playing) return;
-  processor.disconnect();
-  ctx.close();
-  playing = false;
+  node.connect(ctx.destination);
 }
 
 document.getElementById("play").onclick = start;
-document.getElementById("stop").onclick = stop;
-document.getElementById("reset").onclick = () => t = 0;
+
+document.getElementById("stop").onclick = () => {
+  node?.disconnect();
+  ctx?.close();
+};
+
+document.getElementById("reset").onclick = () => {
+  node?.port.postMessage({ reset: true });
+};
