@@ -5,7 +5,8 @@ class BytebeatProcessor extends AudioWorkletProcessor {
     this.t = 0;
     this.step = 1;
 
-    // persistent shared state (IMPORTANT)
+    this.fn = (t) => t;
+
     this.env = {
       ec: new Array(12288).fill(0),
       A: [],
@@ -14,52 +15,34 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       sin: Math.sin,
       cos: Math.cos,
       tan: Math.tan,
-      abs: Math.abs,
-      floor: Math.floor
+      abs: Math.abs
     };
 
-    this.fn = () => 0;
-
     this.port.onmessage = (e) => {
-      if (e.data.reset) {
+      if (e.data.type === "reset") {
         this.t = 0;
         this.env.ec.fill(0);
         return;
       }
 
-      if (e.data.rate) {
-        this.step = e.data.rate / sampleRate;
-      }
+      if (e.data.type === "code") {
+        this.step = (e.data.rate || 8000) / sampleRate;
 
-      if (e.data.code) {
-        this.compile(e.data.code);
+        // SAFE compile (no `with`, no script mode hacks)
+        this.fn = new Function("t", "env", `
+          const { ec, A, n, random, sin, cos, tan, abs } = env;
+
+          return (${e.data.code});
+        `);
       }
     };
   }
 
-  compile(code) {
-    // SAFE single-function compiler (no nested eval chains)
-    try {
-      this.fn = new Function("t", "env", `
-        const {
-          ec, A, n,
-          random, sin, cos, tan, abs, floor
-        } = env;
-
-        return (function() {
-          ${code}
-        })();
-      `);
-    } catch (e) {
-      this.fn = () => 0;
-    }
-  }
-
   process(_, outputs) {
-    const L = outputs[0][0];
-    const R = outputs[0][1] || L;
+    const outL = outputs[0][0];
+    const outR = outputs[0][1] || outL;
 
-    for (let i = 0; i < L.length; i++) {
+    for (let i = 0; i < outL.length; i++) {
       let v = 0;
 
       try {
@@ -68,19 +51,11 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         v = 0;
       }
 
-      let l = v, r = v;
+      const l = v;
+      const r = v;
 
-      if (Array.isArray(v)) {
-        l = v[0];
-        r = v[1];
-      }
-
-      // normalize
-      if (l > 1 || l < -1) l = ((l & 255) / 128) - 1;
-      if (r > 1 || r < -1) r = ((r & 255) / 128) - 1;
-
-      L[i] = l;
-      R[i] = r;
+      outL[i] = l;
+      outR[i] = r;
 
       this.t += this.step;
     }
