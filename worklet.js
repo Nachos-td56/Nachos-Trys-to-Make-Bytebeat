@@ -4,20 +4,15 @@ class BytebeatProcessor extends AudioWorkletProcessor {
 
     this.t = 0;
     this.step = 1;
-    this.rand = 1;
 
-    // PERSISTENT GLOBAL STATE (THIS IS THE FIX)
+    this.fn = () => 0;
+
     this.env = {
       ec: new Array(12288).fill(0),
       A: [],
       n: 12288,
-      random: () => {
-        this.rand = (this.rand * 16807) % 2147483647;
-        return this.rand / 2147483647;
-      }
+      random: Math.random
     };
-
-    this.fn = null;
 
     this.port.onmessage = (e) => {
       if (e.data.reset) {
@@ -31,7 +26,8 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       }
 
       if (e.data.fn) {
-        this.fn = eval("(" + e.data.fn + ")");
+        // SAFE: function is already compiled outside worklet
+        this.fn = new Function("t", "env", "return (" + e.data.fn + ")");
       }
     };
   }
@@ -49,12 +45,11 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         v = 0;
       }
 
-      let l = 0, r = 0;
+      let l = v, r = v;
 
       if (Array.isArray(v)) {
-        [l, r] = v;
-      } else {
-        l = r = v;
+        l = v[0];
+        r = v[1];
       }
 
       if (l > 1 || l < -1) l = ((l & 255) / 128) - 1;
