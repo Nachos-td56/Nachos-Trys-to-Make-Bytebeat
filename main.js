@@ -1,47 +1,73 @@
-let ctx = null;
-let node = null;
+let ctx, processor;
+let t = 0;
+let step = 1;
+let func;
+let playing = false;
 
-async function start() {
-  const code = document.getElementById("code").value;
+function compile(code) {
+  const scope = {
+    sin: Math.sin,
+    cos: Math.cos,
+    tan: Math.tan,
+    abs: Math.abs,
+    pow: Math.pow,
+    floor: Math.floor,
+    random: Math.random
+  };
+
+  return function(tt) {
+    with (scope) {
+      t = tt;
+      return eval(code);
+    }
+  };
+}
+
+function start() {
+  if (playing) return;
+
+  ctx = new AudioContext();
   const rate = Number(document.getElementById("rate").value);
+  step = rate / ctx.sampleRate;
 
-  // Create context once
-  if (!ctx) {
-    ctx = new AudioContext();
+  func = compile(document.getElementById("code").value);
 
-    // IMPORTANT: must load successfully BEFORE node creation
-    await ctx.audioWorklet.addModule("worklet.js");
-  }
+  const bufferSize = 1024;
+  processor = ctx.createScriptProcessor(bufferSize, 0, 2);
 
-  // REQUIRED for autoplay policies
-  if (ctx.state === "suspended") {
-    await ctx.resume();
-  }
+  processor.onaudioprocess = (e) => {
+    const L = e.outputBuffer.getChannelData(0);
+    const R = e.outputBuffer.getChannelData(1);
 
-  if (node) node.disconnect();
+    for (let i = 0; i < bufferSize; i++) {
+      let v = 0;
+      try { v = func(t); } catch {}
 
-  node = new AudioWorkletNode(ctx, "bytebeat");
+      let l, r;
+      if (Array.isArray(v)) [l, r] = v;
+      else l = r = v;
 
-  node.port.postMessage({
-    type: "code",
-    code,
-    rate
-  });
+      if (l > 1 || l < -1) l = ((l & 255) / 128) - 1;
+      if (r > 1 || r < -1) r = ((r & 255) / 128) - 1;
 
-  node.connect(ctx.destination);
+      L[i] = l;
+      R[i] = r;
+
+      t += step;
+    }
+  };
+
+  processor.connect(ctx.destination);
+  playing = true;
 }
 
 function stop() {
-  if (node) {
-    node.disconnect();
-    node = null;
-  }
-}
-
-function reset() {
-  node?.port.postMessage({ type: "reset" });
+  if (!playing) return;
+  processor.disconnect();
+  ctx.close();
+  playing = false;
 }
 
 document.getElementById("play").onclick = start;
 document.getElementById("stop").onclick = stop;
-document.getElementById("reset").onclick = reset;
+document.getElementById("reset").onclick = () => t = 0;
