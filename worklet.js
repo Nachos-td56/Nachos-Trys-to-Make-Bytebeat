@@ -1,26 +1,9 @@
 class BytebeatProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-
     this.t = 0;
     this.step = 1;
-    this.rand = 1;
-
-    // persistent JS scope
-    this.scope = {
-      sin: Math.sin,
-      cos: Math.cos,
-      tan: Math.tan,
-      abs: Math.abs,
-      pow: Math.pow,
-      floor: Math.floor,
-      random: () => {
-        this.rand = (this.rand * 16807) % 2147483647;
-        return this.rand / 2147483647;
-      }
-    };
-
-    this.userCode = "0";
+    this.func = () => 0;
 
     this.port.onmessage = (e) => {
       if (e.data.reset) {
@@ -33,18 +16,29 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       }
 
       if (e.data.code) {
-        this.userCode = e.data.code;
+        this.compile(e.data.code);
       }
     };
   }
 
-  runBytebeat(t) {
-    // THIS is the magic: eval in persistent scope
-    return (function(scope, code, t) {
-      with (scope) {
-        return eval(code);
+  compile(code) {
+    // Build a persistent closure scope
+    this.func = new Function(`
+      let sin=Math.sin, cos=Math.cos, tan=Math.tan,
+          abs=Math.abs, pow=Math.pow, floor=Math.floor;
+
+      let rand=1;
+      function random(){
+        rand = (rand * 16807) % 2147483647;
+        return rand / 2147483647;
       }
-    })(this.scope, this.userCode, t);
+
+      // user persistent variables live here
+
+      return function(t){
+        ${code}
+      };
+    `)();
   }
 
   process(inputs, outputs) {
@@ -55,7 +49,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       let v = 0;
 
       try {
-        v = this.runBytebeat(this.t);
+        v = this.func(this.t);
       } catch {
         v = 0;
       }
