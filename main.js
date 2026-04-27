@@ -1,45 +1,62 @@
-let ctx, node;
-let t = 0;
+let ctx = null;
+let node = null;
+let fn = null;
 let step = 1;
-let fn;
 
 function compile(code) {
-  // Build function ONCE (not per sample)
   return new Function("t", `
     const sin=Math.sin, cos=Math.cos, tan=Math.tan;
     const abs=Math.abs, pow=Math.pow, floor=Math.floor;
-
-    let random = Math.random;
-
+    let random=Math.random;
     return (${code});
   `);
 }
 
 async function start() {
-  if (ctx) await ctx.close();
+  // SAFE context handling
+  if (!ctx || ctx.state === "closed") {
+    ctx = new AudioContext();
+    await ctx.audioWorklet.addModule("worklet.js");
+  }
 
-  ctx = new AudioContext();
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
+
   const rate = Number(document.getElementById("rate").value);
   step = rate / ctx.sampleRate;
 
-  await ctx.audioWorklet.addModule("worklet.js");
-
   fn = compile(document.getElementById("code").value);
+
+  if (node) node.disconnect();
 
   node = new AudioWorkletNode(ctx, "bytebeat");
 
-  node.port.postMessage({ fn: fn.toString(), step });
+  node.port.postMessage({
+    fn: fn.toString(),
+    step
+  });
 
   node.connect(ctx.destination);
 }
 
-document.getElementById("play").onclick = start;
+function stop() {
+  if (node) {
+    node.disconnect();
+    node = null;
+  }
 
-document.getElementById("stop").onclick = () => {
-  node?.disconnect();
-  ctx?.close();
-};
+  // IMPORTANT: do NOT close context aggressively
+  // just suspend instead (safe + reusable)
+  if (ctx && ctx.state !== "closed") {
+    ctx.suspend();
+  }
+}
 
-document.getElementById("reset").onclick = () => {
+function reset() {
   node?.port.postMessage({ reset: true });
-};
+}
+
+document.getElementById("play").onclick = start;
+document.getElementById("stop").onclick = stop;
+document.getElementById("reset").onclick = reset;
