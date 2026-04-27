@@ -26,7 +26,11 @@ async function start() {
   const rate = Number(document.getElementById("rate").value);
   step = rate / ctx.sampleRate;
 
-  fn = compile(document.getElementById("code").value);
+  fn = new Function("t", "env", `
+    with(env){
+      return (${code});
+    }
+  `);
 
   if (node) node.disconnect();
 
