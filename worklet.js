@@ -5,14 +5,20 @@ class BytebeatProcessor extends AudioWorkletProcessor {
     this.t = 0;
     this.step = 1;
 
-    this.fn = () => 0;
-
+    // GLOBAL SCRIPT ENVIRONMENT (i stg if this doesnt fix it)
     this.env = {
       ec: new Array(12288).fill(0),
       A: [],
       n: 12288,
-      random: Math.random
+      random: Math.random,
+      sin: Math.sin,
+      cos: Math.cos,
+      tan: Math.tan,
+      abs: Math.abs,
+      floor: Math.floor
     };
+
+    this.runner = () => 0;
 
     this.port.onmessage = (e) => {
       if (e.data.reset) {
@@ -25,11 +31,28 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         this.step = e.data.rate / sampleRate;
       }
 
-      if (e.data.fn) {
-        // SAFE: function is already compiled outside worklet
-        this.fn = new Function("t", "env", "return (" + e.data.fn + ")");
+      if (e.data.code) {
+        this.compile(e.data.code);
       }
     };
+  }
+
+  compile(code) {
+    // THIS is now SCRIPT MODE execution
+    try {
+      const fn = new Function("env", `
+        const { ec, A, n, random, sin, cos, tan, abs, floor } = env;
+
+        return function(t) {
+          ${code}
+          return 0;
+        };
+      `);
+
+      this.runner = fn(this.env);
+    } catch (e) {
+      this.runner = () => 0;
+    }
   }
 
   process(_, outputs) {
@@ -40,7 +63,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
       let v = 0;
 
       try {
-        v = this.fn(this.t, this.env);
+        v = this.runner(this.t);
       } catch {
         v = 0;
       }
