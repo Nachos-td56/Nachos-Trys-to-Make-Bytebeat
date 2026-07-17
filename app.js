@@ -316,16 +316,16 @@ function bufferToWavBlob(left, right, sampleRate) {
     
     // Exact sizes for our structured chunks
     const fmtChunkSize = 16;  // Standard PCM fmt chunk size
-    const smplChunkSize = 60; // 8 bytes (ID + Size) + 52 bytes of payload
+    const smplChunkSize = 68; // 8 bytes (ID + Size) + 60 bytes of payload (36 metadata + 24 loop)
     
     // Header structure size:
     // - 12 bytes: "RIFF" (4) + File Size (4) + "WAVE" (4)
     // - 8 bytes:  "fmt " ID (4) + chunk size (4)
     // - 16 bytes: fmt chunk payload
     // - 8 bytes:  "smpl" ID (4) + chunk size (4)
-    // - 52 bytes: smpl chunk payload
+    // - 60 bytes: smpl chunk payload (36 sampler metadata + 24 loop info)
     // - 8 bytes:  "data" ID (4) + chunk size (4)
-    const totalHeaderLength = 12 + (8 + fmtChunkSize) + (8 + smplChunkSize) + 8;
+    const totalHeaderLength = 12 + (8 + fmtChunkSize) + (8 + (smplChunkSize - 8)) + 8;
     
     // Allocate the exact size needed (header space + raw audio block size)
     const arrayBuffer = new ArrayBuffer(totalHeaderLength + audioDataLength);
@@ -356,8 +356,8 @@ function bufferToWavBlob(left, right, sampleRate) {
     offset += 8 + fmtChunkSize;
     
     /* SMPL (Loop) Chunk */
-    writeString(offset, 'smpl');                         // Chunk ID
-    view.setUint32(offset + 4, smplChunkSize - 8, true); // Chunk payload size (52 bytes)
+    writeString(offset, 'smpl');                         // Chunk ID (4 bytes)
+    view.setUint32(offset + 4, smplChunkSize - 8, true); // Chunk payload size (60 bytes)
     view.setUint32(offset + 8, 0, true);                 // Manufacturer (0 = generic)
     view.setUint32(offset + 12, 0, true);                // Product (0 = generic)
     view.setUint32(offset + 16, Math.round(1000000000 / sampleRate), true); // Sample Period in nanoseconds
@@ -368,13 +368,15 @@ function bufferToWavBlob(left, right, sampleRate) {
     view.setUint32(offset + 36, 1, true);                // Sample Loops Count (1 loop)
     view.setUint32(offset + 40, 0, true);                // Sampler Specific Data size
 
-    // Loop definition inside 'smpl'
+    // Loop definition inside 'smpl' (starts at offset + 44)
     view.setUint32(offset + 44, 0, true);                // Cue Point ID
     view.setUint32(offset + 48, 0, true);                // Type (0 = Normal forward loop)
     view.setUint32(offset + 52, 0, true);                // Start sample index
-    view.setUint32(offset + 56, left.length - 1, true);  // End sample index
+    view.setUint32(offset + 56, left.length - 1, true);  // End sample index (Loop endpoint)
     view.setUint32(offset + 60, 0, true);                // Fractional pitch
     view.setUint32(offset + 64, 0, true);                // Play Count (0 = Infinite loop)
+    
+    // Jump past the entire smpl chunk (8 bytes of header + 60 bytes of payload)
     offset += smplChunkSize;
 
     /* DATA Chunk Header */
