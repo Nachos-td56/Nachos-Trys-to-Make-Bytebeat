@@ -192,7 +192,7 @@ document.getElementById('play').onclick = async () => {
         // Prepare user code
         let code = editor.getValue().trim();
         const helper = styleSelect.value === 'simple' ? 
-            `const sin=Math.sin,cos=Math.cos,tan=Math.tan,floor=Math.floor,ceil=Math.ceil,abs=Math.abs,random=Math.random,cbrt=Math.cbrt,sqrt=Math.sqrt,pow=Math.pow,min=Math.min,max=Math.max,pi=Math.PI,PI=Math.PI;
+            `const int=Math.floor,trunc=Math.trunc,sin=Math.sin,cos=Math.cos,tan=Math.tan,floor=Math.floor,ceil=Math.ceil,abs=Math.abs,random=Math.random,cbrt=Math.cbrt,sqrt=Math.sqrt,pow=Math.pow,min=Math.min,max=Math.max,pi=Math.PI,PI=Math.PI;
              let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z;` : '';
         
         const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
