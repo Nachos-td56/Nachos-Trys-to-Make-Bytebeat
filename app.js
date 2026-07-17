@@ -26,13 +26,12 @@ const workletCode = `
             this.port.onmessage = (e) => {
                 const data = e.data;
                 if (data.type === 'init') {
-                    // Compile the function inside the worker thread
                     try {
                         this.byteFunc = new Function('t', data.helper + data.code);
                         this.mode = data.mode;
                         this.rate = data.rate;
                         this.vol = data.vol;
-                        this.t = 0; // Reset time on compile
+                        this.t = 0;
                     } catch (err) {
                         this.port.postMessage({ type: 'error', message: 'Compilation Error: ' + err.message });
                     }
@@ -40,36 +39,43 @@ const workletCode = `
                     this.mode = data.mode;
                     this.rate = data.rate;
                     this.vol = data.vol;
+                } else if (data.type === 'resetTime') {
+                    this.t = 0;
                 }
             };
         }
 
         process(inputs, outputs, parameters) {
             const output = outputs[0];
-            const channel = output[0];
-            if (!channel) return true;
+            const ch0 = output[0];
+            const ch1 = output[1] || output[0]; // Channel 1 falls back to 0 if mono target
+            if (!ch0) return true;
 
             if (!this.byteFunc) {
-                channel.fill(0);
+                ch0.fill(0);
+                if (output[1]) output[1].fill(0);
                 return true;
             }
 
             const speed = this.rate / sampleRate;
 
-            // Entire loop wrapped in a single try/catch to optimize performance and prevent message spamming
             try {
-                for (let i = 0; i < channel.length; i++) {
-                    let val = this.byteFunc(Math.floor(this.t));
+                for (let i = 0; i < ch0.length; i++) {
+                    let rawVal = this.byteFunc(Math.floor(this.t));
                     
-                    if (this.mode === 'float') {
-                        val = val || 0;
-                    } else if (this.mode === 'signed') {
-                        val = (((val & 255) << 24) >> 24) / 128;
-                    } else {
-                        val = ((val & 255) / 128) - 1;
-                    }
+                    // Support stereo returning arrays: [left, right]
+                    let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
+                    let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
-                    channel[i] = this.vol * val;
+                    const normalize = (val) => {
+                        if (this.mode === 'float') return val || 0;
+                        if (this.mode === 'signed') return (((val & 255) << 24) >> 24) / 128;
+                        return ((val & 255) / 128) - 1;
+                    };
+
+                    ch0[i] = this.vol * normalize(lVal);
+                    if (output[1]) ch1[i] = this.vol * normalize(rVal);
+
                     this.t += speed;
                 }
             } catch(err) {
@@ -77,9 +83,9 @@ const workletCode = `
                     type: "error",
                     message: "Runtime Error: " + (err.message || err.toString())
                 });
-
-                this.byteFunc = null; // Disable execution immediately
-                channel.fill(0);      // Output clean silence
+                this.byteFunc = null;
+                ch0.fill(0);
+                if (output[1]) output[1].fill(0);
             }
             return true;
         }
@@ -154,6 +160,93 @@ function updateRuntimeParams() {
     }
 }
 
+async function exportWAV(durationSec = 10) {
+    log(`Rendering ${durationSec}s WAV file...`);
+    
+    const targetRate = parseFloat(rateInput.value) || 44100;
+    const sampleCount = Math.floor(targetRate * durationSec);
+    const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
+    
+    // Evaluate function offline
+    const userCode = editor.getValue().trim();
+    const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
+    const evalFunc = new Function('t', helper + finalCode);
+    
+    const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
+    const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
+    
+    const mode = modeSelect.value;
+    const vol = +volInput.value;
+
+    for (let t = 0; t < sampleCount; t++) {
+        let rawVal = evalFunc(t);
+        let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
+        let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
+
+        const norm = (v) => {
+            if (mode === 'float') return v || 0;
+            if (mode === 'signed') return (((v & 255) << 24) >> 24) / 128;
+            return ((v & 255) / 128) - 1;
+        };
+
+        leftBuffer[t] = vol * norm(lVal);
+        rightBuffer[t] = vol * norm(rVal);
+    }
+
+    // Convert float samples to 16-bit PCM WAV File
+    const wavBlob = bufferToWavBlob(leftBuffer, rightBuffer, targetRate);
+    const downloadUrl = URL.createObjectURL(wavBlob);
+    
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `bytebeat_${Date.now()}.wav`;
+    a.click();
+    log("WAV Download started!");
+}
+
+function bufferToWavBlob(left, right, sampleRate) {
+    const numChannels = 2;
+    const bytesPerSample = 2;
+    const blockAlign = numChannels * bytesPerSample;
+    const bufferLength = left.length * blockAlign;
+    const headerByteLength = 44;
+    const arrayBuffer = new ArrayBuffer(headerByteLength + bufferLength);
+    const view = new DataView(arrayBuffer);
+
+    const writeString = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    };
+
+    /* RIFF header */
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + bufferLength, true);
+    writeString(8, 'WAVE');
+    /* FMT chunk */
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM format
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true); // Bits per sample
+    /* DATA chunk */
+    writeString(36, 'data');
+    view.setUint32(40, bufferLength, true);
+
+    // Write interleaved samples
+    let offset = 44;
+    for (let i = 0; i < left.length; i++) {
+        let sL = Math.max(-1, Math.min(1, left[i]));
+        let sR = Math.max(-1, Math.min(1, right[i]));
+        view.setInt16(offset, sL < 0 ? sL * 0x8000 : sL * 0x7FFF, true);
+        view.setInt16(offset + 2, sR < 0 ? sR * 0x8000 : sR * 0x7FFF, true);
+        offset += 4;
+    }
+
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
 rateInput.oninput = updateRuntimeParams;
 volInput.oninput = updateRuntimeParams;
 modeSelect.onchange = updateRuntimeParams;
@@ -191,17 +284,29 @@ document.getElementById('play').onclick = async () => {
 
         // Prepare user code
         let code = editor.getValue().trim();
-        const helper = styleSelect.value === 'simple' ? 
-            `const int=Math.floor,
-                   abs=Math.abs, acos=Math.acos, acosh=Math.acosh, asin=Math.asin, asinh=Math.asinh,
-                   atan=Math.atan, atan2=Math.atan2, atanh=Math.atanh, cbrt=Math.cbrt, ceil=Math.ceil,
-                   clz32=Math.clz32, cos=Math.cos, cosh=Math.cosh, exp=Math.exp, expm1=Math.expm1,
-                   floor=Math.floor, fround=Math.fround, hypot=Math.hypot, imul=Math.imul, log=Math.log,
-                   log10=Math.log10, log1p=Math.log1p, log2=Math.log2, max=Math.max, min=Math.min,
-                   pow=Math.pow, random=Math.random, round=Math.round, sign=Math.sign, sin=Math.sin,
-                   sinh=Math.sinh, sqrt=Math.sqrt, tan=Math.tan, tanh=Math.tanh, trunc=Math.trunc,
-                   pi=Math.PI, PI=Math.PI;
-             let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z;` : '';
+
+        // Stateful Memory, Bytebeat Math & Clamping Helpers
+        const memoryHelper = `
+            if (!globalThis._bbState) globalThis._bbState = { s: new Float32Array(65536), a: new Float32Array(65536), w: new Float32Array(65536), mem: {} };
+            const s = globalThis._bbState.s, a = globalThis._bbState.a, w = globalThis._bbState.w, mem = globalThis._bbState.mem;
+            const clamp = (v, min = -1, max = 1) => Math.min(Math.max(v, min), max);
+            const wrap = (v, min = 0, max = 255) => { const r = max - min + 1; return ((v - min) % r + r) % r + min; };
+            const lerp = (v0, v1, amt) => v0 + amt * (v1 - v0);
+        `;
+
+        const mathHelper = `
+            const int=Math.floor, abs=Math.abs, acos=Math.acos, acosh=Math.acosh, asin=Math.asin, asinh=Math.asinh,
+                  atan=Math.atan, atan2=Math.atan2, atanh=Math.atanh, cbrt=Math.cbrt, ceil=Math.ceil,
+                  clz32=Math.clz32, cos=Math.cos, cosh=Math.cosh, exp=Math.exp, expm1=Math.expm1,
+                  floor=Math.floor, fround=Math.fround, hypot=Math.hypot, imul=Math.imul, log=Math.log,
+                  log10=Math.log10, log1p=Math.log1p, log2=Math.log2, max=Math.max, min=Math.min,
+                  pow=Math.pow, random=Math.random, round=Math.round, sign=Math.sign, sin=Math.sin,
+                  sinh=Math.sinh, sqrt=Math.sqrt, tan=Math.tan, tanh=Math.tanh, trunc=Math.trunc,
+                  pi=Math.PI, PI=Math.PI;
+            let b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,u,v,x,y,z;
+        `;
+
+        const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
         
         const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
 
@@ -236,3 +341,9 @@ document.getElementById('stop').onclick = () => {
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
     log("Stopped");
 };
+
+document.getElementById('reset-time').onclick = () => {
+    if (workletNode) workletNode.port.postMessage({ type: 'resetTime' });
+};
+
+document.getElementById('export-wav').onclick = () => exportWAV(10); // Exports 10 seconds
