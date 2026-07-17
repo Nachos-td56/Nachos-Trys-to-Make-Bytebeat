@@ -50,7 +50,7 @@
     </div>
 
     <script>
-        let audioCtx, processor, analyser, t = 0, animationFrame;
+        let audioCtx, workletNode, analyser, animationFrame;
         let isPlaying = false;
         let editor; // Global Monaco instance
         const logEl = document.getElementById('log');
@@ -63,6 +63,74 @@
         const styleSelect = document.getElementById('style');
         const rateInput = document.getElementById('rate');
         const volInput = document.getElementById('vol');
+
+        // Define the AudioWorklet Processor source code in a string
+        const workletCode = `
+            class BytebeatProcessor extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this.t = 0;
+                    this.byteFunc = null;
+                    this.mode = 'signed';
+                    this.rate = 8000;
+                    this.vol = 0.85;
+
+                    this.port.onmessage = (e) => {
+                        const data = e.data;
+                        if (data.type === 'init') {
+                            // Compile the function inside the worker thread
+                            try {
+                                this.byteFunc = new Function('t', data.helper + data.code);
+                                this.mode = data.mode;
+                                this.rate = data.rate;
+                                this.vol = data.vol;
+                                this.t = 0; // Reset time on compile
+                            } catch (err) {
+                                this.port.postMessage({ type: 'error', message: err.message });
+                            }
+                        } else if (data.type === 'updateParams') {
+                            this.mode = data.mode;
+                            this.rate = data.rate;
+                            this.vol = data.vol;
+                        }
+                    };
+                }
+
+                process(inputs, outputs, parameters) {
+                    const output = outputs[0];
+                    const channel = output[0];
+                    if (!channel) return true;
+
+                    if (!this.byteFunc) {
+                        for (let i = 0; i < channel.length; i++) channel[i] = 0;
+                        return true;
+                    }
+
+                    const speed = this.rate / sampleRate;
+
+                    for (let i = 0; i < channel.length; i++) {
+                        try {
+                            let val = this.byteFunc(Math.floor(this.t));
+                            
+                            if (this.mode === 'float') {
+                                val = val || 0;
+                            } else if (this.mode === 'signed') {
+                                val = (((val & 255) << 24) >> 24) / 128;
+                            } else {
+                                val = ((val & 255) / 128) - 1;
+                            }
+
+                            channel[i] = this.vol * val;
+                            this.t += speed;
+                        } catch(err) {
+                            channel[i] = 0;
+                        }
+                    }
+                    return true;
+                }
+            }
+            registerProcessor('bytebeat-processor', BytebeatProcessor);
+        `;
 
         // Configure and Load Monaco Editor
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.48.0/min/vs' }});
@@ -119,75 +187,87 @@
             animationFrame = requestAnimationFrame(drawVisualizer);
         }
 
-        document.getElementById('play').onclick = () => {
+        // Live parameter updates (rate, volume, mode) without stopping audio
+        function updateRuntimeParams() {
+            if (workletNode) {
+                workletNode.port.postMessage({
+                    type: 'updateParams',
+                    mode: modeSelect.value,
+                    rate: parseFloat(rateInput.value) || 44100,
+                    vol: +volInput.value
+                });
+            }
+        }
+
+        rateInput.oninput = updateRuntimeParams;
+        volInput.oninput = updateRuntimeParams;
+        modeSelect.onchange = updateRuntimeParams;
+
+        document.getElementById('play').onclick = async () => {
             if (isPlaying) return;
             if (!editor) {
                 log("Wait for Monaco Editor to finish loading...");
                 return;
             }
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 2048;
-            }
-            audioCtx.resume();
-
-            processor = audioCtx.createScriptProcessor(4096, 1, 1);
-            t = 0;
-
-            // Get code from Monaco editor instance
-            let code = editor.getValue().trim();
-
-            let byteFunc;
+            
             try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create an object URL from the worklet code string and load it
+                    const blob = new Blob([workletCode], { type: 'application/javascript' });
+                    const url = URL.createObjectURL(blob);
+                    await audioCtx.audioWorklet.addModule(url);
+                    
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 2048;
+                }
+                await audioCtx.resume();
+
+                // Setup the worklet node
+                workletNode = new AudioWorkletNode(audioCtx, 'bytebeat-processor');
+                
+                // Handle compilation error feedback back from the worker thread
+                workletNode.port.onmessage = (e) => {
+                    if (e.data.type === 'error') {
+                        log("Error in worklet: " + e.data.message);
+                    }
+                };
+
+                // Prepare user code
+                let code = editor.getValue().trim();
                 const helper = styleSelect.value === 'simple' ? 
                     `const sin=Math.sin,cos=Math.cos,tan=Math.tan,floor=Math.floor,ceil=Math.ceil,abs=Math.abs,random=Math.random,cbrt=Math.cbrt,sqrt=Math.sqrt,pow=Math.pow,min=Math.min,max=Math.max,pi=Math.PI;
                      let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z;` : '';
                 
-                byteFunc = new Function('t', helper + (styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';'));
+                const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
+
+                // Send setup details to the processor running on the separate thread
+                workletNode.port.postMessage({
+                    type: 'init',
+                    helper: helper,
+                    code: finalCode,
+                    mode: modeSelect.value,
+                    rate: parseFloat(rateInput.value) || 44100,
+                    vol: +volInput.value
+                });
+
+                workletNode.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                
+                isPlaying = true;
                 log("Loaded OK");
-            } catch(e) {
-                log("Error: " + e.message);
-                return;
+                drawVisualizer();
+            } catch (err) {
+                log("Initialization Error: " + err.message);
             }
-
-            const isFloat = modeSelect.value === 'float';
-
-            processor.onaudioprocess = e => {
-                const buf = e.outputBuffer.getChannelData(0);
-                const sr = parseFloat(rateInput.value) || 44100;
-                const speed = sr / audioCtx.sampleRate;
-                const vol = +volInput.value;
-                const mode = modeSelect.value;
-
-                for (let i = 0; i < buf.length; i++) {
-                    try {
-                        let val = byteFunc(Math.floor(t));
-                        
-                        if (mode === 'float') {
-                            val = val || 0;
-                        } else if (mode === 'signed') {
-                            val = (((val & 255) << 24) >> 24) / 128;
-                        } else {
-                            val = ((val & 255) / 128) - 1;
-                        }
-
-                        buf[i] = vol * val;
-                        t += speed;
-                    } catch(err) {
-                        buf[i] = 0;
-                    }
-                }
-            };
-
-            processor.connect(analyser);
-            analyser.connect(audioCtx.destination);
-            isPlaying = true;
-            drawVisualizer();
         };
 
         document.getElementById('stop').onclick = () => {
-            if (processor) processor.disconnect();
+            if (workletNode) {
+                workletNode.disconnect();
+                workletNode = null;
+            }
             if (animationFrame) cancelAnimationFrame(animationFrame);
             isPlaying = false;
             ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
