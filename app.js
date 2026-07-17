@@ -263,17 +263,30 @@ document.getElementById('reset-time').onclick = () => {
     if (workletNode) workletNode.port.postMessage({ type: 'resetTime' });
 };
 
-async function exportWAV(durationSec = 10) {
-    log(`Rendering ${durationSec}s WAV file...`);
-    
+async function exportWAV(requestedDurationSec = 20) {
     const targetRate = parseFloat(rateInput.value) || 44100;
-    const sampleCount = Math.floor(targetRate * durationSec);
+    
+    // Calculate the exact length of one full Bytebeat mathematical loop cycle.
+    // The default song loops every 262,144 t-steps. 
+    // We adjust for play speed (targetRate / sampleRate) if applicable, 
+    // but in OfflineAudioContext t maps 1:1 to rendered samples.
+    const loopCycleSamples = 262144; 
+    
+    // Determine how many samples the user requested
+    const requestedSamples = Math.floor(targetRate * requestedDurationSec);
+    
+    // Snap the exported length to the NEAREST complete cycle
+    const cyclesCount = Math.max(1, Math.round(requestedSamples / loopCycleSamples));
+    const sampleCount = cyclesCount * loopCycleSamples;
+    const actualDurationSec = sampleCount / targetRate;
+    
+    log(`Snapping export to complete loop cycles. Rendering ${actualDurationSec.toFixed(2)}s WAV file...`);
+    
     const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
     
     const userCode = editor.getValue().trim();
     const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
     
-    // Dynamically build helper inside exportWAV using the globalized strings
     const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
     const evalFunc = new Function('t', helper + finalCode);
     
