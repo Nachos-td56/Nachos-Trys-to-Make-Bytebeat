@@ -71,6 +71,12 @@ const workletCode = `
                     channel[i] = this.vol * val;
                     this.t += speed;
                 } catch(err) {
+                    this.port.PostMessage({
+                        type: "error",
+                        message: err.stack || err.toString()
+                    });
+
+                    this.byteFunc = null; // prevent spamming errors
                     channel[i] = 0;
                 }
             }
