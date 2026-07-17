@@ -160,93 +160,6 @@ function updateRuntimeParams() {
     }
 }
 
-async function exportWAV(durationSec = 10) {
-    log(`Rendering ${durationSec}s WAV file...`);
-    
-    const targetRate = parseFloat(rateInput.value) || 44100;
-    const sampleCount = Math.floor(targetRate * durationSec);
-    const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
-    
-    // Evaluate function offline
-    const userCode = editor.getValue().trim();
-    const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
-    const evalFunc = new Function('t', helper + finalCode);
-    
-    const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
-    const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
-    
-    const mode = modeSelect.value;
-    const vol = +volInput.value;
-
-    for (let t = 0; t < sampleCount; t++) {
-        let rawVal = evalFunc(t);
-        let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
-        let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
-
-        const norm = (v) => {
-            if (mode === 'float') return v || 0;
-            if (mode === 'signed') return (((v & 255) << 24) >> 24) / 128;
-            return ((v & 255) / 128) - 1;
-        };
-
-        leftBuffer[t] = vol * norm(lVal);
-        rightBuffer[t] = vol * norm(rVal);
-    }
-
-    // Convert float samples to 16-bit PCM WAV File
-    const wavBlob = bufferToWavBlob(leftBuffer, rightBuffer, targetRate);
-    const downloadUrl = URL.createObjectURL(wavBlob);
-    
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = `bytebeat_${Date.now()}.wav`;
-    a.click();
-    log("WAV Download started!");
-}
-
-function bufferToWavBlob(left, right, sampleRate) {
-    const numChannels = 2;
-    const bytesPerSample = 2;
-    const blockAlign = numChannels * bytesPerSample;
-    const bufferLength = left.length * blockAlign;
-    const headerByteLength = 44;
-    const arrayBuffer = new ArrayBuffer(headerByteLength + bufferLength);
-    const view = new DataView(arrayBuffer);
-
-    const writeString = (offset, str) => {
-        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-    };
-
-    /* RIFF header */
-    writeString(0, 'RIFF');
-    view.setUint32(4, 36 + bufferLength, true);
-    writeString(8, 'WAVE');
-    /* FMT chunk */
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM format
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * blockAlign, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, 16, true); // Bits per sample
-    /* DATA chunk */
-    writeString(36, 'data');
-    view.setUint32(40, bufferLength, true);
-
-    // Write interleaved samples
-    let offset = 44;
-    for (let i = 0; i < left.length; i++) {
-        let sL = Math.max(-1, Math.min(1, left[i]));
-        let sR = Math.max(-1, Math.min(1, right[i]));
-        view.setInt16(offset, sL < 0 ? sL * 0x8000 : sL * 0x7FFF, true);
-        view.setInt16(offset + 2, sR < 0 ? sR * 0x8000 : sR * 0x7FFF, true);
-        offset += 4;
-    }
-
-    return new Blob([arrayBuffer], { type: 'audio/wav' });
-}
-
 rateInput.oninput = updateRuntimeParams;
 volInput.oninput = updateRuntimeParams;
 modeSelect.onchange = updateRuntimeParams;
@@ -345,5 +258,92 @@ document.getElementById('stop').onclick = () => {
 document.getElementById('reset-time').onclick = () => {
     if (workletNode) workletNode.port.postMessage({ type: 'resetTime' });
 };
+
+async function exportWAV(durationSec = 10) {
+    log(`Rendering ${durationSec}s WAV file...`);
+    
+    const targetRate = parseFloat(rateInput.value) || 44100;
+    const sampleCount = Math.floor(targetRate * durationSec);
+    const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
+    
+    // Evaluate function offline
+    const userCode = editor.getValue().trim();
+    const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
+    const evalFunc = new Function('t', helper + finalCode);
+    
+    const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
+    const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
+    
+    const mode = modeSelect.value;
+    const vol = +volInput.value;
+
+    for (let t = 0; t < sampleCount; t++) {
+        let rawVal = evalFunc(t);
+        let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
+        let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
+
+        const norm = (v) => {
+            if (mode === 'float') return v || 0;
+            if (mode === 'signed') return (((v & 255) << 24) >> 24) / 128;
+            return ((v & 255) / 128) - 1;
+        };
+
+        leftBuffer[t] = vol * norm(lVal);
+        rightBuffer[t] = vol * norm(rVal);
+    }
+
+    // Convert float samples to 16-bit PCM WAV File
+    const wavBlob = bufferToWavBlob(leftBuffer, rightBuffer, targetRate);
+    const downloadUrl = URL.createObjectURL(wavBlob);
+    
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `bytebeat_${Date.now()}.wav`;
+    a.click();
+    log("WAV Download started!");
+}
+
+function bufferToWavBlob(left, right, sampleRate) {
+    const numChannels = 2;
+    const bytesPerSample = 2;
+    const blockAlign = numChannels * bytesPerSample;
+    const bufferLength = left.length * blockAlign;
+    const headerByteLength = 44;
+    const arrayBuffer = new ArrayBuffer(headerByteLength + bufferLength);
+    const view = new DataView(arrayBuffer);
+
+    const writeString = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    };
+
+    /* RIFF header */
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + bufferLength, true);
+    writeString(8, 'WAVE');
+    /* FMT chunk */
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM format
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true); // Bits per sample
+    /* DATA chunk */
+    writeString(36, 'data');
+    view.setUint32(40, bufferLength, true);
+
+    // Write interleaved samples
+    let offset = 44;
+    for (let i = 0; i < left.length; i++) {
+        let sL = Math.max(-1, Math.min(1, left[i]));
+        let sR = Math.max(-1, Math.min(1, right[i]));
+        view.setInt16(offset, sL < 0 ? sL * 0x8000 : sL * 0x7FFF, true);
+        view.setInt16(offset + 2, sR < 0 ? sR * 0x8000 : sR * 0x7FFF, true);
+        offset += 4;
+    }
+
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
 
 document.getElementById('export-wav').onclick = () => exportWAV(10); // Exports 10 seconds
