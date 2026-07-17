@@ -231,7 +231,7 @@ document.getElementById('play').onclick = async () => {
                   pow=Math.pow, random=Math.random, round=Math.round, sign=Math.sign, sin=Math.sin,
                   sinh=Math.sinh, sqrt=Math.sqrt, tan=Math.tan, tanh=Math.tanh, trunc=Math.trunc,
                   pi=Math.PI, PI=Math.PI;
-            let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z;
+            let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,U,V,W,X,Y,Z;
         `;
 
         const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
