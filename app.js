@@ -313,28 +313,40 @@ function bufferToWavBlob(left, right, sampleRate) {
     const bytesPerSample = 2;
     const blockAlign = numChannels * bytesPerSample;
     const bufferLength = left.length * blockAlign;
+    
+    // Header is 44 bytes. The 'smpl' loop chunk adds an extra 60 bytes.
+    const loopChunkLength = 60; 
     const headerByteLength = 44;
-    const arrayBuffer = new ArrayBuffer(headerByteLength + bufferLength);
+    const totalHeaderLength = headerByteLength + loopChunkLength;
+    
+    const arrayBuffer = new ArrayBuffer(totalHeaderLength + bufferLength);
     const view = new DataView(arrayBuffer);
 
     const writeString = (offset, str) => {
         for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
     };
 
+    /* RIFF header */
     writeString(0, 'RIFF');
-    view.setUint32(4, 36 + bufferLength, true);
+    // Total file size minus 8 bytes (36 + loop chunk size + audio buffer size)
+    view.setUint32(4, 36 + loopChunkLength + bufferLength, true);
     writeString(8, 'WAVE');
+    
+    /* FMT chunk */
     writeString(12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); 
+    view.setUint16(20, 1, true); // PCM format
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, sampleRate * blockAlign, true);
     view.setUint16(32, blockAlign, true);
-    view.setUint16(34, 16, true); 
+    view.setUint16(34, 16, true); // Bits per sample
+    
+    /* DATA chunk */
     writeString(36, 'data');
     view.setUint32(40, bufferLength, true);
 
+    // Write interleaved audio samples right after the standard data header
     let offset = 44;
     for (let i = 0; i < left.length; i++) {
         let sL = Math.max(-1, Math.min(1, left[i]));
@@ -343,6 +355,28 @@ function bufferToWavBlob(left, right, sampleRate) {
         view.setInt16(offset + 2, sR < 0 ? sR * 0x8000 : sR * 0x7FFF, true);
         offset += 4;
     }
+
+    /* === 'smpl' Loop Chunk Metadata === */
+    // This is appended to the end of the file so target loops work seamlessly
+    writeString(offset, 'smpl');                         // Chunk ID
+    view.setUint32(offset + 4, 52, true);                // Chunk Size (52 bytes of data following)
+    view.setUint32(offset + 8, 0, true);                 // Manufacturer (0 = arbitrary)
+    view.setUint32(offset + 12, 0, true);                // Product (0 = arbitrary)
+    view.setUint32(offset + 16, 1000000000 / sampleRate, true); // Sample Period (nanoseconds per sample)
+    view.setUint32(offset + 20, 60, true);               // MIDI Unity Note (60 = Middle C)
+    view.setUint32(offset + 24, 0, true);                // MIDI Pitch Fraction
+    view.setUint32(offset + 28, 0, true);                // SMPTE Format
+    view.setUint32(offset + 32, 0, true);                // SMPTE Offset
+    view.setUint32(offset + 36, 1, true);                // Sample Loops Count (1 loop definition)
+    view.setUint32(offset + 40, 0, true);                // Sampler Data
+
+    // --- Loop Definition ---
+    view.setUint32(offset + 44, 0, true);                // Cue Point ID
+    view.setUint32(offset + 48, 0, true);                // Type (0 = Normal forward loop)
+    view.setUint32(offset + 52, 0, true);                // Start point (Sample index 0)
+    view.setUint32(offset + 56, left.length - 1, true);  // End point (Last sample index)
+    view.setUint32(offset + 60, 0, true);                // Fractional Period
+    view.setUint32(offset + 64, 0, true);                // Play Count (0 = Infinite loop)
 
     return new Blob([arrayBuffer], { type: 'audio/wav' });
 }
