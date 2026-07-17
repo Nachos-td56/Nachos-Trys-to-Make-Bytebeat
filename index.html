@@ -1,28 +1,198 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Nachos Bytebeat</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <title>bytebeat v2</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; margin:0; }
+        /* Style the Monaco container to replace the old textarea */
+        #editor { 
+            width: 100%; 
+            height: 160px; 
+            border: 2px solid #0f0; 
+            margin-bottom: 15px;
+            box-sizing: border-box;
+        }
+        button { padding: 12px 24px; margin: 5px; font-size: 1.2em; background: #0f0; color: #111; border: none; cursor: pointer; }
+        button:hover { background: #ff0; }
+        select, input { background: #222; color: #0f0; border: 1px solid #0f0; padding: 8px; }
+        canvas { width: 100%; height: 220px; background: #000; border: 2px solid #0f0; margin: 15px 0; }
+        #log { color: #ff0; background: #111; padding: 8px; border: 1px solid #ff0; height: 60px; overflow:auto; }
+    </style>
+    <!-- Load Monaco Editor Dependency Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
 </head>
 <body>
+    <div class="container">
+        <h1>bytebeat — sin fixed</h1>
+        
+        <!-- Replacing textarea with Monaco container -->
+        <div id="editor"></div>
+        
+        <div>
+            <button id="play">▶ Play</button>
+            <button id="stop">■ Stop</button>
+            <select id="mode">
+                <option value="byte">Unsigned Bytebeat</option>
+                <option value="signed" selected>Signed Bytebeat</option>
+                <option value="float">Floatbeat</option>
+            </select>
+            <select id="style">
+                <option value="simple" selected>Expression (Simple)</option>
+                <option value="complex">Statement / Funcbeat (Complex)</option>
+            </select>
+            <label>Rate <input id="rate" type="number" value="44100" style="width:80px;"> Hz</label>
+            <label>Vol <input id="vol" type="range" min="0" max="1" step="0.01" value="0.85"></label>
+        </div>
 
-<div class="card">
-  <h1>Bytebeat / Somewhat Floatbeat</h1>
+        <canvas id="viz" width="800" height="220"></canvas>
+        <div id="log">Loading Monaco Editor...</div>
+    </div>
 
-  <textarea id="code">a=t*(t>>10&3)/[1,1.5,1.25,1.3][t>>14&3],(4E4/(t&4095)&127)+(t/[1,1.25,1.5,1.75][t>>15&3]&64)+a%64+a%63</textarea>
+    <script>
+        let audioCtx, processor, analyser, t = 0, animationFrame;
+        let isPlaying = false;
+        let editor; // Global Monaco instance
+        const logEl = document.getElementById('log');
 
-  <div class="controls">
-    <label>Sample Rate
-      <input id="rate" type="number" value="8000">
-    </label>
+        function log(msg) { logEl.textContent = msg; console.log(msg); }
 
-    <button id="play">Play</button>
-    <button id="stop">Stop</button>
-    <button id="reset">Reset</button>
-  </div>
-</div>
+        const canvas = document.getElementById('viz');
+        const ctx = canvas.getContext('2d');
+        const modeSelect = document.getElementById('mode');
+        const styleSelect = document.getElementById('style');
+        const rateInput = document.getElementById('rate');
+        const volInput = document.getElementById('vol');
 
-<script src="main.js"></script>
+        // Configure and Load Monaco Editor
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.48.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            // Define custom green retro theme
+            monaco.editor.defineTheme('bytebeat-theme', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                    { token: '', foreground: '00ff00' },
+                    { token: 'keyword', foreground: 'ffffff', fontStyle: 'bold' },
+                    { token: 'number', foreground: 'ffff00' },
+                    { token: 'comment', foreground: '006600', fontStyle: 'italic' }
+                ],
+                colors: {
+                    'editor.background': '#222222',
+                    'editor.foreground': '#00ff00',
+                    'editorLineNumber.foreground': '#005500',
+                    'editorLineNumber.activeForeground': '#00ff00',
+                    'editor.lineHighlightBackground': '#1a331a',
+                }
+            });
+
+            // Initialize the editor inside our div
+            editor = monaco.editor.create(document.getElementById('editor'), {
+                value: `a=t*(t&1024?2:1)*(t&2048?2:.5)*(t&16384?t&32768?.9:.8:1),25*cbrt(sin(a/16))+10*sin(a/8)+(50*random()*(1&t>>12)&-t>>6)`,
+                language: 'javascript',
+                theme: 'bytebeat-theme',
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                automaticLayout: true,
+                fontSize: 14,
+                fontFamily: 'monospace'
+            });
+
+            log("Ready...");
+        });
+
+        function drawVisualizer() {
+            if (!analyser) return;
+            const data = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(data);
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.lineWidth = 3; ctx.strokeStyle = '#0f0'; ctx.shadowBlur = 10; ctx.shadowColor = '#0f0';
+            ctx.beginPath();
+            const slice = canvas.width / data.length;
+            let x = 0;
+            for (let i = 0; i < data.length; i++) {
+                const y = (data[i] / 128) * canvas.height / 2;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                x += slice;
+            }
+            ctx.stroke();
+            animationFrame = requestAnimationFrame(drawVisualizer);
+        }
+
+        document.getElementById('play').onclick = () => {
+            if (isPlaying) return;
+            if (!editor) {
+                log("Wait for Monaco Editor to finish loading...");
+                return;
+            }
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 2048;
+            }
+            audioCtx.resume();
+
+            processor = audioCtx.createScriptProcessor(4096, 1, 1);
+            t = 0;
+
+            // Get code from Monaco editor instance
+            let code = editor.getValue().trim();
+
+            let byteFunc;
+            try {
+                const helper = styleSelect.value === 'simple' ? 
+                    `const sin=Math.sin,cos=Math.cos,tan=Math.tan,floor=Math.floor,ceil=Math.ceil,abs=Math.abs,random=Math.random,cbrt=Math.cbrt,sqrt=Math.sqrt,pow=Math.pow,min=Math.min,max=Math.max,pi=Math.PI;
+                     let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z;` : '';
+                
+                byteFunc = new Function('t', helper + (styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';'));
+                log("Loaded OK");
+            } catch(e) {
+                log("Error: " + e.message);
+                return;
+            }
+
+            const isFloat = modeSelect.value === 'float';
+
+            processor.onaudioprocess = e => {
+                const buf = e.outputBuffer.getChannelData(0);
+                const sr = parseFloat(rateInput.value) || 44100;
+                const speed = sr / audioCtx.sampleRate;
+                const vol = +volInput.value;
+                const mode = modeSelect.value;
+
+                for (let i = 0; i < buf.length; i++) {
+                    try {
+                        let val = byteFunc(Math.floor(t));
+                        
+                        if (mode === 'float') {
+                            val = val || 0;
+                        } else if (mode === 'signed') {
+                            val = (((val & 255) << 24) >> 24) / 128;
+                        } else {
+                            val = ((val & 255) / 128) - 1;
+                        }
+
+                        buf[i] = vol * val;
+                        t += speed;
+                    } catch(err) {
+                        buf[i] = 0;
+                    }
+                }
+            };
+
+            processor.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            isPlaying = true;
+            drawVisualizer();
+        };
+
+        document.getElementById('stop').onclick = () => {
+            if (processor) processor.disconnect();
+            if (animationFrame) cancelAnimationFrame(animationFrame);
+            isPlaying = false;
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+            log("Stopped");
+        };
+    </script>
 </body>
 </html>
