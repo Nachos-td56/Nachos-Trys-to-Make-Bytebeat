@@ -200,12 +200,27 @@ document.getElementById('play').onclick = async () => {
 
         // Stateful Memory, Bytebeat Math & Clamping Helpers
         const memoryHelper = `
-            if (!globalThis._bbState) globalThis._bbState = { s: new Float32Array(65536), a: new Float32Array(65536), w: new Float32Array(65536), mem: {} };
-            const s = globalThis._bbState.s, a = globalThis._bbState.a, w = globalThis._bbState.w, mem = globalThis._bbState.mem;
-            const clamp = (v, min = -1, max = 1) => Math.min(Math.max(v, min), max);
-            const wrap = (v, min = 0, max = 255) => { const r = max - min + 1; return ((v - min) % r + r) % r + min; };
-            const lerp = (v0, v1, amt) => v0 + amt * (v1 - v0);
-        `;
+            if (!globalThis._bbState) {
+                globalThis._bbState = {
+                    sample: new Float32Array(65536),
+                    auxiliary: new Float32Array(65536),
+                    waveform: new Float32Array(65536),
+                    mem: {}
+               };
+            }
+
+            const sampleMemory = globalThis._bbState.sample,
+               auxiliaryMemory = globalThis._bbState.auxiliary,
+               waveformMemory = globalThis._bbState.waveform,
+               customMemory = globalThis._bbState.mem;
+
+           const clamp = (v, min = -1, max = 1) => Math.min(Math.max(v, min), max);
+           const wrap = (v, min = 0, max = 255) => {
+               const r = max - min + 1;
+               return ((v - min) % r + r) % r + min;
+           };
+           const lerp = (v0, v1, amt) => v0 + amt * (v1 - v0);
+       `;
 
         const mathHelper = `
             const int=Math.floor, abs=Math.abs, acos=Math.acos, acosh=Math.acosh, asin=Math.asin, asinh=Math.asinh,
