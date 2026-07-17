@@ -1,2 +1,3 @@
 # Nachos-Trys-to-Make-Bytebeat
-This is a repo where i make a bytebeat webpage. or atleast try to. So dont except much
+
+Bytebeat is more developed than Floatbeat. Just a heads up.
