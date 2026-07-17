@@ -34,7 +34,7 @@ const workletCode = `
                         this.vol = data.vol;
                         this.t = 0; // Reset time on compile
                     } catch (err) {
-                        this.port.postMessage({ type: 'error', message: err.message });
+                        this.port.postMessage({ type: 'error', message: 'Compilation Error: ' + err.message });
                     }
                 } else if (data.type === 'updateParams') {
                     this.mode = data.mode;
@@ -50,14 +50,15 @@ const workletCode = `
             if (!channel) return true;
 
             if (!this.byteFunc) {
-                for (let i = 0; i < channel.length; i++) channel[i] = 0;
+                channel.fill(0);
                 return true;
             }
 
             const speed = this.rate / sampleRate;
 
-            for (let i = 0; i < channel.length; i++) {
-                try {
+            // Entire loop wrapped in a single try/catch to optimize performance and prevent message spamming
+            try {
+                for (let i = 0; i < channel.length; i++) {
                     let val = this.byteFunc(Math.floor(this.t));
                     
                     if (this.mode === 'float') {
@@ -70,15 +71,15 @@ const workletCode = `
 
                     channel[i] = this.vol * val;
                     this.t += speed;
-                } catch(err) {
-                    this.port.PostMessage({
-                        type: "error",
-                        message: err.stack || err.toString()
-                    });
-
-                    this.byteFunc = null; // prevent spamming errors
-                    channel[i] = 0;
                 }
+            } catch(err) {
+                this.port.postMessage({
+                    type: "error",
+                    message: "Runtime Error: " + (err.message || err.toString())
+                });
+
+                this.byteFunc = null; // Disable execution immediately
+                channel.fill(0);      // Output clean silence
             }
             return true;
         }
@@ -110,8 +111,7 @@ require(['vs/editor/editor.main'], function() {
 
     // Initialize the editor inside our div
     editor = monaco.editor.create(document.getElementById('editor'), {
-        value: `((4E4/(t&2**13-1)*'1001101110011010'[15&t>>13]&128)+(t*sin(t>>2)*'00100011'[7&t>>14]&128)%256*(-t&2**14-1)/2E4+(t*[1,1.2,1.35,1.5][3&t>>16]>>2&128)+(t/16*'8867'[3&t>>15]*'1232'[3&t>>13]&128))/1.5 
-// bytebeat from https://www.reddit.com/r/bytebeat/comments/14je5fs/frodo_and_the_magic_weed`,
+        value: `((4E4/(t&2**13-1)*'1001101110011010'[15&t>>13]&128)+(t*sin(t>>2)*'00100011'[7&t>>14]&128)%256*(-t&2**14-1)/2E4+(t*[1,1.2,1.35,1.5][3&t>>16]>>2&128)+(t/16*'8867'[3&t>>15]*'1232'[3&t>>13]&128))/1.5 \n// bytebeat from https://www.reddit.com/r/bytebeat/comments/14je5fs/frodo_and_the_magic_weed`,
         language: 'javascript',
         theme: 'bytebeat-theme',
         minimap: { enabled: false },
@@ -182,10 +182,10 @@ document.getElementById('play').onclick = async () => {
         // Setup the worklet node
         workletNode = new AudioWorkletNode(audioCtx, 'bytebeat-processor');
         
-        // Handle compilation error feedback back from the worker thread
+        // Handle compilation & runtime error feedback back from the worker thread
         workletNode.port.onmessage = (e) => {
             if (e.data.type === 'error') {
-                log("Error in worklet: " + e.data.message);
+                log(e.data.message);
             }
         };
 
