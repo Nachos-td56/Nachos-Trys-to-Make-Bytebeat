@@ -192,7 +192,15 @@ document.getElementById('play').onclick = async () => {
         // Prepare user code
         let code = editor.getValue().trim();
         const helper = styleSelect.value === 'simple' ? 
-            `const int=Math.floor,trunc=Math.trunc,sin=Math.sin,cos=Math.cos,tan=Math.tan,floor=Math.floor,ceil=Math.ceil,abs=Math.abs,random=Math.random,cbrt=Math.cbrt,sqrt=Math.sqrt,pow=Math.pow,min=Math.min,max=Math.max,pi=Math.PI,PI=Math.PI;
+            `const int=Math.floor,
+                   abs=Math.abs, acos=Math.acos, acosh=Math.acosh, asin=Math.asin, asinh=Math.asinh,
+                   atan=Math.atan, atan2=Math.atan2, atanh=Math.atanh, cbrt=Math.cbrt, ceil=Math.ceil,
+                   clz32=Math.clz32, cos=Math.cos, cosh=Math.cosh, exp=Math.exp, expm1=Math.expm1,
+                   floor=Math.floor, fround=Math.fround, hypot=Math.hypot, imul=Math.imul, log=Math.log,
+                   log10=Math.log10, log1p=Math.log1p, log2=Math.log2, max=Math.max, min=Math.min,
+                   pow=Math.pow, random=Math.random, round=Math.round, sign=Math.sign, sin=Math.sin,
+                   sinh=Math.sinh, sqrt=Math.sqrt, tan=Math.tan, tanh=Math.tanh, trunc=Math.trunc,
+                   pi=Math.PI, PI=Math.PI;
              let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z;` : '';
         
         const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
