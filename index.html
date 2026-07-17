@@ -33,8 +33,8 @@
             <button id="play">▶ Play</button>
             <button id="stop">■ Stop</button>
             <select id="mode">
-                <option value="byte">Unsigned Bytebeat</option>
-                <option value="signed" selected>Signed Bytebeat</option>
+                <option value="byte" selected>Unsigned Bytebeat</option>
+                <option value="signed">Signed Bytebeat</option>
                 <option value="float">Floatbeat</option>
             </select>
             <select id="style">
@@ -157,7 +157,7 @@
             // Initialize the editor inside our div
             editor = monaco.editor.create(document.getElementById('editor'), {
                 value: `((4E4/(t&2**13-1)*'1001101110011010'[15&t>>13]&128)+(t*sin(t>>2)*'00100011'[7&t>>14]&128)%256*(-t&2**14-1)/2E4+(t*[1,1.2,1.35,1.5][3&t>>16]>>2&128)+(t/16*'8867'[3&t>>15]*'1232'[3&t>>13]&128))/1.5 
-                        // bytebeat from https://www.reddit.com/r/bytebeat/comments/14je5fs/frodo_and_the_magic_weed`,
+// bytebeat from https://www.reddit.com/r/bytebeat/comments/14je5fs/frodo_and_the_magic_weed`,
                 language: 'javascript',
                 theme: 'bytebeat-theme',
                 minimap: { enabled: false },
