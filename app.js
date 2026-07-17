@@ -264,37 +264,51 @@ document.getElementById('reset-time').onclick = () => {
 };
 
 function detectLoopPeriod(evalFunc) {
-    // Candidate periods: powers of 2 from 4,096 to 16,777,216
+    // Large loop periods to check (powers of 2 up to ~16.7 million samples / 6 minutes at 44.1kHz)
     const candidates = [];
     for (let power = 12; power <= 24; power++) {
         candidates.push(Math.pow(2, power));
     }
     
-    // Pick diverse test points across time to guarantee its a true repeating period
-    const testPoints = [0, 1, 123, 1024, 4567, 12345, 50000];
-    
+    // Evaluates a test point. Handles both stereophonic arrays and monophonic numbers.
+    const getOutputsEqual = (t1, t2) => {
+        const val1 = evalFunc(t1);
+        const val2 = evalFunc(t2);
+        if (Array.isArray(val1) && Array.isArray(val2)) {
+            return val1[0] === val2[0] && val1[1] === val2[1];
+        }
+        return val1 === val2;
+    };
+
+    // We must check a wide spread of "probe times" to ensure we aren't tricked 
+    // by small repeating waveforms in the intro or a single silent bar.
+    const probePoints = [0, 100, 1000, 8192, 16384, 65536, 131072, 262144];
+
     for (const P of candidates) {
-        let isPeriod = true;
-        for (const t of testPoints) {
-            const val1 = evalFunc(t);
-            const val2 = evalFunc(t + P);
-            
-            // Support stereo (arrays) and mono comparison
-            if (Array.isArray(val1) && Array.isArray(val2)) {
-                if (val1[0] !== val2[0] || val1[1] !== val2[1]) {
-                    isPeriod = false;
-                    break;
-                }
-            } else if (val1 !== val2) {
-                isPeriod = false;
+        let isTruePeriod = true;
+        for (const t of probePoints) {
+            if (!getOutputsEqual(t, t + P)) {
+                isTruePeriod = false;
                 break;
             }
         }
-        if (isPeriod) {
-            return P; // Found the exact dynamic period!
+        if (isTruePeriod) {
+            // Once a math loop period matches, double-check deep in the timeline to confirm
+            let doubleCheck = true;
+            for (let offset = 1; offset <= 100; offset++) {
+                if (!getOutputsEqual(t + P * 2 + offset, t + P * 3 + offset)) {
+                    doubleCheck = false;
+                    break;
+                }
+            }
+            if (doubleCheck) {
+                return P; // True seamless loop period found!
+            }
         }
     }
-    return 262144; // Smart fallback if its completely chaotic or uses Math.random()
+    
+    // Fallback if the song has no loop structure or contains random()
+    return 262144; 
 }
 
 async function exportWAV(requestedDurationSec = 20) {
@@ -306,19 +320,19 @@ async function exportWAV(requestedDurationSec = 20) {
     const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
     const evalFunc = new Function('t', helper + finalCode);
     
-    // === DYNAMIC LOOP DETECTION ===
+    // Run our "robust" macro loop-detector
     const loopCycleSamples = detectLoopPeriod(evalFunc);
-    log(`Detected natural song loop period: ${loopCycleSamples} samples.`);
+    log(`Detected true song loop period: ${loopCycleSamples} steps.`);
     
     // Determine how many samples the user requested
     const requestedSamples = Math.floor(targetRate * requestedDurationSec);
     
-    // Snap the exported length to the NEAREST complete cycle
+    // Round to the nearest complete MACRO cycle
     const cyclesCount = Math.max(1, Math.round(requestedSamples / loopCycleSamples));
     const sampleCount = cyclesCount * loopCycleSamples;
     const actualDurationSec = sampleCount / targetRate;
     
-    log(`Snapping export to ${cyclesCount} complete loop cycles. Rendering ${actualDurationSec.toFixed(2)}s WAV file...`);
+    log(`Exporting ${cyclesCount} complete seamless cycle(s). File length: ${actualDurationSec.toFixed(2)}s.`);
     
     const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
     
@@ -328,6 +342,7 @@ async function exportWAV(requestedDurationSec = 20) {
     const mode = modeSelect.value;
     const vol = +volInput.value;
 
+    // Render the audio
     for (let t = 0; t < sampleCount; t++) {
         let rawVal = evalFunc(t);
         let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
