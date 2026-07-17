@@ -263,14 +263,52 @@ document.getElementById('reset-time').onclick = () => {
     if (workletNode) workletNode.port.postMessage({ type: 'resetTime' });
 };
 
+function detectLoopPeriod(evalFunc) {
+    // Candidate periods: powers of 2 from 4,096 to 16,777,216
+    const candidates = [];
+    for (let power = 12; power <= 24; power++) {
+        candidates.push(Math.pow(2, power));
+    }
+    
+    // Pick diverse test points across time to guarantee its a true repeating period
+    const testPoints = [0, 1, 123, 1024, 4567, 12345, 50000];
+    
+    for (const P of candidates) {
+        let isPeriod = true;
+        for (const t of testPoints) {
+            const val1 = evalFunc(t);
+            const val2 = evalFunc(t + P);
+            
+            // Support stereo (arrays) and mono comparison
+            if (Array.isArray(val1) && Array.isArray(val2)) {
+                if (val1[0] !== val2[0] || val1[1] !== val2[1]) {
+                    isPeriod = false;
+                    break;
+                }
+            } else if (val1 !== val2) {
+                isPeriod = false;
+                break;
+            }
+        }
+        if (isPeriod) {
+            return P; // Found the exact dynamic period!
+        }
+    }
+    return 262144; // Smart fallback if its completely chaotic or uses Math.random()
+}
+
 async function exportWAV(requestedDurationSec = 20) {
     const targetRate = parseFloat(rateInput.value) || 44100;
     
-    // Calculate the exact length of one full Bytebeat mathematical loop cycle.
-    // The default song loops every 262,144 t-steps. 
-    // We adjust for play speed (targetRate / sampleRate) if applicable, 
-    // but in OfflineAudioContext t maps 1:1 to rendered samples.
-    const loopCycleSamples = 262144; 
+    const userCode = editor.getValue().trim();
+    const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
+    
+    const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
+    const evalFunc = new Function('t', helper + finalCode);
+    
+    // === DYNAMIC LOOP DETECTION ===
+    const loopCycleSamples = detectLoopPeriod(evalFunc);
+    log(`Detected natural song loop period: ${loopCycleSamples} samples.`);
     
     // Determine how many samples the user requested
     const requestedSamples = Math.floor(targetRate * requestedDurationSec);
@@ -280,15 +318,9 @@ async function exportWAV(requestedDurationSec = 20) {
     const sampleCount = cyclesCount * loopCycleSamples;
     const actualDurationSec = sampleCount / targetRate;
     
-    log(`Snapping export to complete loop cycles. Rendering ${actualDurationSec.toFixed(2)}s WAV file...`);
+    log(`Snapping export to ${cyclesCount} complete loop cycles. Rendering ${actualDurationSec.toFixed(2)}s WAV file...`);
     
     const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
-    
-    const userCode = editor.getValue().trim();
-    const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
-    
-    const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
-    const evalFunc = new Function('t', helper + finalCode);
     
     const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
     const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
