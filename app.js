@@ -347,4 +347,4 @@ function bufferToWavBlob(left, right, sampleRate) {
     return new Blob([arrayBuffer], { type: 'audio/wav' });
 }
 
-document.getElementById('export-wav').onclick = () => exportWAV(10);
+document.getElementById('export-wav').onclick = () => exportWAV(20);
