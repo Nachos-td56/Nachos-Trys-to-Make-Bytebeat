@@ -161,18 +161,30 @@ document.getElementById('play').onclick = async () => {
         const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
         const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
 
-        // Strong reset before init
-        workletNode.port.postMessage({ type: 'resetState' });
-        await new Promise(r => setTimeout(r, 10)); // tiny breathing room
+       await new Promise((resolve) => {
+           const handler = (e) => {
+               if (e.data.type === "stateReset") {
+                   workletNode.port.removeEventListener("message", handler);
+                   resolve();
+               }
+           };
 
-        workletNode.port.postMessage({
-            type: 'init',
-            helper: helper,
-            code: finalCode,
-            mode: modeSelect.value,
-            rate: parseFloat(rateInput.value) || 44100,
-            vol: +volInput.value
-        });
+           workletNode.port.addEventListener("message", handler);
+           workletNode.port.start();
+
+           workletNode.port.postMessage({
+               type: "resetState"
+           });
+       });
+
+       workletNode.port.postMessage({
+           type: "init",
+           helper: helper,
+           code: finalCode,
+           mode: modeSelect.value,
+           rate: parseFloat(rateInput.value) || 44100,
+           vol: +volInput.value
+       });
 
         workletNode.connect(analyser);
         analyser.connect(audioCtx.destination);
@@ -192,13 +204,21 @@ document.getElementById('play').onclick = async () => {
 
 document.getElementById('stop').onclick = () => {
     if (workletNode) {
+        workletNode.port.postMessage({
+            type:"resetState"
+        });
+
         workletNode.disconnect();
         workletNode = null;
     }
-    if (animationFrame) cancelAnimationFrame(animationFrame);
+
+    if (animationFrame)
+        cancelAnimationFrame(animationFrame);
+
     isPlaying = false;
-    ctx.fillStyle = '#000'; 
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
     log("Stopped");
 };
 
