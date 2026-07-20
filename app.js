@@ -175,19 +175,50 @@ require(['vs/editor/editor.main'], function() {
 
 function drawVisualizer() {
     if (!analyser) return;
-    const data = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(data);
-    ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.lineWidth = 3; ctx.strokeStyle = '#0f0'; ctx.shadowBlur = 10; ctx.shadowColor = '#0f0';
-    ctx.beginPath();
-    const slice = canvas.width / data.length;
+    
+    const bufferLength = analyser.fftSize;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    // Get frequency data for looks
+    analyser.getByteFrequencyData(dataArray);
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; // slight trail
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    const barWidth = (canvas.width / bufferLength) * 2.5;
     let x = 0;
-    for (let i = 0; i < data.length; i++) {
-        const y = (data[i] / 128) * canvas.height / 2;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        x += slice;
+    
+    for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height * 0.95;
+        
+        // neon color based on height + time
+        const hue = (i / bufferLength) * 60 + (Date.now() / 30) % 60;
+        ctx.fillStyle = `hsl(${hue}, 100%, 65%)`;
+        
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        
+        // mirror bottom glow
+        ctx.fillStyle = `hsla(${hue}, 100%, 65%, 0.4)`;
+        ctx.fillRect(x, canvas.height - barHeight/2, barWidth, barHeight/2);
+        
+        x += barWidth + 1;
+    }
+    
+    // extra waveform line on top
+    analyser.getByteTimeDomainData(dataArray);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#0f0';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#0ff';
+    ctx.beginPath();
+    
+    for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128;
+        const y = v * canvas.height / 2;
+        i === 0 ? ctx.moveTo(i * (canvas.width / bufferLength), y) : ctx.lineTo(i * (canvas.width / bufferLength), y);
     }
     ctx.stroke();
+    
     animationFrame = requestAnimationFrame(drawVisualizer);
 }
 
