@@ -320,7 +320,7 @@ async function exportWAV(requestedDurationSec = 20) {
     const evalFunc = new Function('t', 
         'globalThis._bbState = { sample: new Float32Array(65536), auxiliary: new Float32Array(65536), waveform: new Float32Array(65536), mem: {} }; ' 
         + helper + finalCode
-    ); // Reset state here as well
+    ); // Reset state here also
     
     // Run our "robust" macro loop-detector
     const loopCycleSamples = detectLoopPeriod(evalFunc);
