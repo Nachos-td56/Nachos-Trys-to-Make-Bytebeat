@@ -33,7 +33,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                 }
 
                 // Nuke common custom globals if any
-                ['fx','fxi','out','h','A','c1','c2','c3'].forEach(k => delete globalThis[k]);
+                ['fx','fxi','out','h','A','c1','c2','c3','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'].forEach(k => delete globalThis[k]);
 
                 this.t = 0;
                 this.port.postMessage({ type: 'stateReset' });
