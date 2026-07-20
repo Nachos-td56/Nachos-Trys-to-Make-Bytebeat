@@ -126,7 +126,7 @@ document.getElementById('play').onclick = async () => {
         log("Wait for Monaco Editor to finish loading...");
         return;
     }
-   
+    
     try {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -140,8 +140,9 @@ document.getElementById('play').onclick = async () => {
         
         await audioCtx.resume();
 
-        // Force brand new worklet every time
+        // Force brand new worklet every time & KILL old processing thread
         if (workletNode) {
+            workletNode.port.postMessage({ type: 'kill' });
             workletNode.disconnect();
             workletNode = null;
         }
@@ -204,9 +205,8 @@ document.getElementById('play').onclick = async () => {
 
 document.getElementById('stop').onclick = () => {
     if (workletNode) {
-        workletNode.port.postMessage({
-            type:"resetState"
-        });
+        workletNode.port.postMessage({ type: "resetState" });
+        workletNode.port.postMessage({ type: 'kill' }); // Explicitly kill processing thread
 
         workletNode.disconnect();
         workletNode = null;
