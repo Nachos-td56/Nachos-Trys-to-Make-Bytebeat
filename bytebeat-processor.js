@@ -1,6 +1,7 @@
 class BytebeatProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
+        this.alive = true; // Added to track processor lifecycle
         this.t = 0;
         this.byteFunc = null;
         this.mode = 'byte';
@@ -10,7 +11,9 @@ class BytebeatProcessor extends AudioWorkletProcessor {
 
         this.port.onmessage = (e) => {
             const data = e.data;
-            if (data.type === 'init') {
+            if (data.type === 'kill') {
+                this.alive = false; // Flag to shut down in the next process tick
+            } else if (data.type === 'init') {
                 this.cleanupGlobals();
                 try {
                     this.byteFunc = new Function('t', data.helper + data.code);
@@ -55,6 +58,9 @@ class BytebeatProcessor extends AudioWorkletProcessor {
     }
 
     process(inputs, outputs, parameters) {
+        // Explicitly return false if the node has been killed to stop audio processing thread
+        if (!this.alive) return false;
+
         const output = outputs[0];
         if (!output || output.length < 2) return true;
 
@@ -72,7 +78,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         try {
             for (let i = 0; i < ch0.length; i++) {
                 let rawVal = this.byteFunc(Math.floor(this.t));
-               
+                
                 let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
                 let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
