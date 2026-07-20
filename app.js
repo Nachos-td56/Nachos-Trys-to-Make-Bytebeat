@@ -130,12 +130,13 @@ document.getElementById('play').onclick = async () => {
     try {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const blob = new Blob([workletCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            await audioCtx.audioWorklet.addModule(url);
+    
+            // Load from separate file
+            await audioCtx.audioWorklet.addModule(workletUrl);
+    
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
-        }
+       }
         
         await audioCtx.resume();
 
