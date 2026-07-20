@@ -49,7 +49,7 @@ const mathHelper = `
     let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z;
 `;
 
-// Define the AudioWorklet Processor source code in a string, may move this to its own .js file
+// Define the AudioWorklet Processor source code in a string
 const workletCode = `
     class BytebeatProcessor extends AudioWorkletProcessor {
         constructor() {
@@ -59,7 +59,6 @@ const workletCode = `
             this.mode = 'byte';
             this.rate = 48000;
             this.vol = 0.85;
-
             this.port.onmessage = (e) => {
                 const data = e.data;
                 if (data.type === 'init') {
@@ -86,29 +85,29 @@ const workletCode = `
                         globalThis._bbState.mem = {};
                     }
                     this.t = 0;
-                    this.port.postMessage({ type: 'stateReset' }); // optional feedback
+                    this.port.postMessage({ type: 'stateReset' });
                 }
             };
         }
 
         process(inputs, outputs, parameters) {
             const output = outputs[0];
-            const ch0 = output[0];
-            const ch1 = output[1] || output[0];
-            if (!ch0) return true;
+            if (!output || output.length < 2) return true; // safety
 
-            if (!this.byteFunc) {
-                ch0.fill(0);
-                if (output[1]) output[1].fill(0);
+            const ch0 = output[0];
+            const ch1 = output[1];
+
+            if (!ch0 || !this.byteFunc) {
+                ch0?.fill(0);
+                ch1?.fill(0);
                 return true;
             }
 
             const speed = this.rate / sampleRate;
-
             try {
                 for (let i = 0; i < ch0.length; i++) {
                     let rawVal = this.byteFunc(Math.floor(this.t));
-                    
+                   
                     let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
                     let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
@@ -119,7 +118,7 @@ const workletCode = `
                     };
 
                     ch0[i] = this.vol * normalize(lVal);
-                    if (output[1]) ch1[i] = this.vol * normalize(rVal);
+                    ch1[i] = this.vol * normalize(rVal);  // always write to right now
 
                     this.t += speed;
                 }
@@ -130,7 +129,7 @@ const workletCode = `
                 });
                 this.byteFunc = null;
                 ch0.fill(0);
-                if (output[1]) output[1].fill(0);
+                ch1.fill(0);
             }
             return true;
         }
@@ -225,7 +224,12 @@ document.getElementById('play').onclick = async () => {
         }
         await audioCtx.resume();
 
-        workletNode = new AudioWorkletNode(audioCtx, 'bytebeat-processor');
+        workletNode = new AudioWorkletNode(audioCtx, 'bytebeat-processor', {
+            numberOfOutputs: 1,
+            outputChannelCount: [2],   // Force stereo
+            channelCount: 2,
+            channelCountMode: 'explicit'
+        });
         
         workletNode.port.onmessage = (e) => {
             if (e.data.type === 'error') log(e.data.message);
@@ -251,6 +255,12 @@ document.getElementById('play').onclick = async () => {
 
         workletNode.connect(analyser);
         analyser.connect(audioCtx.destination);
+
+        // Force stereo all the way down the chain just to be safe
+        if (audioCtx.destination.channelCount !== 2) {
+            audioCtx.destination.channelCount = 2;
+            audioCtx.destination.channelCountMode = 'explicit';
+        }
         
         isPlaying = true;
         log("Loaded OK");
