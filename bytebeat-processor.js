@@ -6,10 +6,15 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         this.mode = 'byte';
         this.rate = 48000;
         this.vol = 0.85;
+
+        // Aggressive cleanup on startup
+        BytebeatProcessor.deleteGlobals();
+
         this.port.onmessage = (e) => {
             const data = e.data;
             if (data.type === 'init') {
                 try {
+                    BytebeatProcessor.deleteGlobals();  // clean before new song
                     this.byteFunc = new Function('t', data.helper + data.code);
                     this.mode = data.mode;
                     this.rate = data.rate;
@@ -32,13 +37,34 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                     globalThis._bbState.mem = {};
                 }
 
-                // Nuke common custom globals if any
-                ['fx','fxi','out','h','A','c1','c2','c3','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'].forEach(k => delete globalThis[k]);
+                BytebeatProcessor.deleteGlobals();
 
                 this.t = 0;
                 this.port.postMessage({ type: 'stateReset' });
             }
         };
+    }
+
+    static deleteGlobals() {
+        // Nuke single-letter vars (A-Z, a-z), covers ~90% of bytebeat garbage
+        for (let i = 0; i < 26; i++) {
+            delete globalThis[String.fromCharCode(65 + i)];
+            delete globalThis[String.fromCharCode(97 + i)];
+        }
+
+        // Extra common stateful vars from heavy songs
+        const extras = ['fx','fxi','out','h','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
+        extras.forEach(k => delete globalThis[k]);
+
+        // Broader cleanup
+        for (const name in globalThis) {
+            if (Object.prototype.hasOwnProperty.call(globalThis, name) &&
+                !['globalThis', '_bbState'].includes(name)) {
+                try {
+                    delete globalThis[name];
+                } catch (e) {}
+            }
+        }
     }
 
     process(inputs, outputs, parameters) {
