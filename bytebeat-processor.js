@@ -6,7 +6,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         this.mode = 'byte';
         this.rate = 48000;
         this.vol = 0.85;
-        this.sampleRate = sampleRate;  // grab it early
+        this.sampleRate = sampleRate;
 
         this.port.onmessage = (e) => {
             const data = e.data;
@@ -42,17 +42,15 @@ class BytebeatProcessor extends AudioWorkletProcessor {
     }
 
     cleanupGlobals() {
-        // Targeted cleanup - only the common offenders
-        const targets = ['fx','fxi','out','h','A','c1','c2','c3','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
-        targets.forEach(k => {
-            try { delete globalThis[k]; } catch(e) {}
-        });
+        // Single letter cleanup
+        for (let i = 0; i < 26; ++i) {
+            delete globalThis[String.fromCharCode(65 + i)];   // A-Z
+            delete globalThis[String.fromCharCode(97 + i)];   // a-z
+        }
 
-        // Single letters. only if we really need it
-        // for (let i = 0; i < 26; i++) {
-        //     delete globalThis[String.fromCharCode(65 + i)];
-        //     delete globalThis[String.fromCharCode(97 + i)];
-        // }
+        // Extras
+        const extras = ['fx','fxi','out','h','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
+        extras.forEach(k => { try { delete globalThis[k]; } catch(e){} });
     }
 
     process(inputs, outputs, parameters) {
