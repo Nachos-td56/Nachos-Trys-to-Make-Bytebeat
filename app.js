@@ -49,7 +49,7 @@ const mathHelper = `
     let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z;
 `;
 
-// Define the AudioWorklet Processor source code in a string
+// Define the AudioWorklet Processor source code in a string, may move this to its own .js file
 const workletCode = `
     class BytebeatProcessor extends AudioWorkletProcessor {
         constructor() {
