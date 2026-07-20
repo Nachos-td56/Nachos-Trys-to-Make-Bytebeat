@@ -175,42 +175,19 @@ require(['vs/editor/editor.main'], function() {
 
 function drawVisualizer() {
     if (!analyser) return;
-
     const data = new Uint8Array(analyser.fftSize);
     analyser.getByteTimeDomainData(data);
-
-    // Slight fade instead of a hard clear
-    ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Wave styling
-    ctx.strokeStyle = "#00ff66";
-    ctx.lineWidth = 4;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.shadowBlur = 25;
-    ctx.shadowColor = "#00ff66";
-
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.lineWidth = 3; ctx.strokeStyle = '#0f0'; ctx.shadowBlur = 10; ctx.shadowColor = '#0f0';
     ctx.beginPath();
-
     const slice = canvas.width / data.length;
-
+    let x = 0;
     for (let i = 0; i < data.length; i++) {
-        const amplitude = (data[i] - 128) / 128;
-        const x = i * slice;
-        const y = canvas.height / 2 + amplitude * canvas.height * 0.35;
-
-        if (i === 0)
-            ctx.moveTo(x, y);
-        else
-            ctx.lineTo(x, y);
+        const y = (data[i] / 128) * canvas.height / 2;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        x += slice;
     }
-
     ctx.stroke();
-
-    // Prevent the glow from affecting anything else
-    ctx.shadowBlur = 0;
-
     animationFrame = requestAnimationFrame(drawVisualizer);
 }
 
