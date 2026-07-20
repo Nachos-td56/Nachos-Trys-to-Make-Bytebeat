@@ -136,7 +136,7 @@ document.getElementById('play').onclick = async () => {
     
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
-       }
+        }
         
         await audioCtx.resume();
 
