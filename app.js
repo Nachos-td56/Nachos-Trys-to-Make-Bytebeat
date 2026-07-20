@@ -84,6 +84,10 @@ const workletCode = `
                         globalThis._bbState.waveform.fill(0);
                         globalThis._bbState.mem = {};
                     }
+
+                    // Nuke common custom globals if any
+                    ['fx','fxi','out','h','A','c1','c2','c3'].forEach(k => delete globalThis[k]);
+
                     this.t = 0;
                     this.port.postMessage({ type: 'stateReset' });
                 }
@@ -211,38 +215,43 @@ document.getElementById('play').onclick = async () => {
         log("Wait for Monaco Editor to finish loading...");
         return;
     }
-    
+   
     try {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const blob = new Blob([workletCode], { type: 'application/javascript' });
             const url = URL.createObjectURL(blob);
             await audioCtx.audioWorklet.addModule(url);
-            
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
         }
+        
         await audioCtx.resume();
+
+        // Force brand new worklet every time
+        if (workletNode) {
+            workletNode.disconnect();
+            workletNode = null;
+        }
 
         workletNode = new AudioWorkletNode(audioCtx, 'bytebeat-processor', {
             numberOfOutputs: 1,
-            outputChannelCount: [2],   // Force stereo
+            outputChannelCount: [2],
             channelCount: 2,
             channelCountMode: 'explicit'
         });
-        
+       
         workletNode.port.onmessage = (e) => {
             if (e.data.type === 'error') log(e.data.message);
         };
 
         let code = editor.getValue().trim();
-
-        // Local helper generation using now-global variables
         const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
         const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
 
-        // Reset state so if a old song was played, it doesnt pollute the new songs state
+        // Strong reset before init
         workletNode.port.postMessage({ type: 'resetState' });
+        await new Promise(r => setTimeout(r, 10)); // tiny breathing room
 
         workletNode.port.postMessage({
             type: 'init',
@@ -256,14 +265,13 @@ document.getElementById('play').onclick = async () => {
         workletNode.connect(analyser);
         analyser.connect(audioCtx.destination);
 
-        // Force stereo all the way down the chain just to be safe
         if (audioCtx.destination.channelCount !== 2) {
             audioCtx.destination.channelCount = 2;
             audioCtx.destination.channelCountMode = 'explicit';
         }
-        
+       
         isPlaying = true;
-        log("Loaded OK");
+        log("Loaded");
         drawVisualizer();
     } catch (err) {
         log("Initialization Error: " + err.message);
@@ -277,7 +285,8 @@ document.getElementById('stop').onclick = () => {
     }
     if (animationFrame) cancelAnimationFrame(animationFrame);
     isPlaying = false;
-    ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#000'; 
+    ctx.fillRect(0,0,canvas.width,canvas.height);
     log("Stopped");
 };
 
