@@ -6,15 +6,13 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         this.mode = 'byte';
         this.rate = 48000;
         this.vol = 0.85;
-
-        // Aggressive cleanup on startup
-        BytebeatProcessor.deleteGlobals();
+        this.sampleRate = sampleRate;  // grab it early
 
         this.port.onmessage = (e) => {
             const data = e.data;
             if (data.type === 'init') {
+                this.cleanupGlobals();
                 try {
-                    BytebeatProcessor.deleteGlobals();  // clean before new song
                     this.byteFunc = new Function('t', data.helper + data.code);
                     this.mode = data.mode;
                     this.rate = data.rate;
@@ -36,40 +34,30 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                     globalThis._bbState.waveform.fill(0);
                     globalThis._bbState.mem = {};
                 }
-
-                BytebeatProcessor.deleteGlobals();
-
+                this.cleanupGlobals();
                 this.t = 0;
                 this.port.postMessage({ type: 'stateReset' });
             }
         };
     }
 
-    static deleteGlobals() {
-        // Nuke single-letter vars (A-Z, a-z), covers ~90% of bytebeat garbage
-        for (let i = 0; i < 26; i++) {
-            delete globalThis[String.fromCharCode(65 + i)];
-            delete globalThis[String.fromCharCode(97 + i)];
-        }
+    cleanupGlobals() {
+        // Targeted cleanup - only the common offenders
+        const targets = ['fx','fxi','out','h','A','c1','c2','c3','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
+        targets.forEach(k => {
+            try { delete globalThis[k]; } catch(e) {}
+        });
 
-        // Extra common stateful vars from heavy songs
-        const extras = ['fx','fxi','out','h','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
-        extras.forEach(k => delete globalThis[k]);
-
-        // Broader cleanup
-        for (const name in globalThis) {
-            if (Object.prototype.hasOwnProperty.call(globalThis, name) &&
-                !['globalThis', '_bbState'].includes(name)) {
-                try {
-                    delete globalThis[name];
-                } catch (e) {}
-            }
-        }
+        // Single letters. only if we really need it
+        // for (let i = 0; i < 26; i++) {
+        //     delete globalThis[String.fromCharCode(65 + i)];
+        //     delete globalThis[String.fromCharCode(97 + i)];
+        // }
     }
 
     process(inputs, outputs, parameters) {
         const output = outputs[0];
-        if (!output || output.length < 2) return true; // safety
+        if (!output || output.length < 2) return true;
 
         const ch0 = output[0];
         const ch1 = output[1];
@@ -81,6 +69,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         }
 
         const speed = this.rate / this.sampleRate;
+
         try {
             for (let i = 0; i < ch0.length; i++) {
                 let rawVal = this.byteFunc(Math.floor(this.t));
