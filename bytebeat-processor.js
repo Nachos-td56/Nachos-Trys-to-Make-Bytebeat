@@ -51,6 +51,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         // Extras
         const extras = ['fx','fxi','out','h','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
         extras.forEach(k => { try { delete globalThis[k]; } catch(e){} });
+        delete globalThis._bbState;
     }
 
     process(inputs, outputs, parameters) {
