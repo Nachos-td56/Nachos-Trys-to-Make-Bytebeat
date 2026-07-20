@@ -80,7 +80,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const speed = this.rate / sampleRate;
+        const speed = this.rate / this.sampleRate;
         try {
             for (let i = 0; i < ch0.length; i++) {
                 let rawVal = this.byteFunc(Math.floor(this.t));
