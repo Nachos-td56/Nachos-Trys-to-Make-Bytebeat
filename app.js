@@ -15,13 +15,14 @@ const volInput = document.getElementById('vol');
 // === MOVED TO GLOBAL SCOPE ===
 // Stateful Memory, Bytebeat Math & Clamping Helpers
 const memoryHelper = `
-    // Force reset state so a new song doesnt get a old songs variables
-    globalThis._bbState = {
-        sample: new Float32Array(65536),
-        auxiliary: new Float32Array(65536),
-        waveform: new Float32Array(65536),
-        mem: {}
-    };
+    if (!globalThis._bbState) {
+        globalThis._bbState = {
+            sample: new Float32Array(65536),
+            auxiliary: new Float32Array(65536),
+            waveform: new Float32Array(65536),
+            mem: {}
+        };
+    }
 
     const sampleMemory = globalThis._bbState.sample,
        auxiliaryMemory = globalThis._bbState.auxiliary,
@@ -77,6 +78,15 @@ const workletCode = `
                     this.vol = data.vol;
                 } else if (data.type === 'resetTime') {
                     this.t = 0;
+                } else if (data.type === 'resetState') {
+                    if (globalThis._bbState) {
+                        globalThis._bbState.sample.fill(0);
+                        globalThis._bbState.auxiliary.fill(0);
+                        globalThis._bbState.waveform.fill(0);
+                        globalThis._bbState.mem = {};
+                    }
+                    this.t = 0;
+                    this.port.postMessage({ type: 'stateReset' }); // optional feedback
                 }
             };
         }
@@ -227,6 +237,9 @@ document.getElementById('play').onclick = async () => {
         const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
         const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
 
+        // Reset state so if a old song was played, it doesnt pollute the new songs state
+        workletNode.port.postMessage({ type: 'resetState' });
+
         workletNode.port.postMessage({
             type: 'init',
             helper: helper,
@@ -317,10 +330,21 @@ async function exportWAV(requestedDurationSec = 20) {
     const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
     
     const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
-    const evalFunc = new Function('t', 
-        'globalThis._bbState = { sample: new Float32Array(65536), auxiliary: new Float32Array(65536), waveform: new Float32Array(65536), mem: {} }; ' 
-        + helper + finalCode
-    ); // Reset state here also
+    const evalFunc = new Function('t', `
+        if (!globalThis._bbState) {
+            globalThis._bbState = {
+                sample: new Float32Array(65536),
+                auxiliary: new Float32Array(65536),
+                waveform: new Float32Array(65536),
+                mem: {}
+            };
+        } else {
+            globalThis._bbState.sample.fill(0);
+            globalThis._bbState.auxiliary.fill(0);
+            globalThis._bbState.waveform.fill(0);
+            globalThis._bbState.mem = {};
+        }
+        ` + helper + finalCode); // Reset state here also
     
     // Run our "robust" macro loop-detector
     const loopCycleSamples = detectLoopPeriod(evalFunc);
