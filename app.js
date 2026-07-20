@@ -175,50 +175,42 @@ require(['vs/editor/editor.main'], function() {
 
 function drawVisualizer() {
     if (!analyser) return;
-    
-    const bufferLength = analyser.fftSize;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    // Get frequency data for looks
-    analyser.getByteFrequencyData(dataArray);
-    
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; // slight trail
+
+    const data = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(data);
+
+    // Slight fade instead of a hard clear
+    ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    const barWidth = (canvas.width / bufferLength) * 2.5;
-    let x = 0;
-    
-    for (let i = 0; i < bufferLength; i++) {
-        const barHeight = (dataArray[i] / 255) * canvas.height * 0.95;
-        
-        // neon color based on height + time
-        const hue = (i / bufferLength) * 60 + (Date.now() / 30) % 60;
-        ctx.fillStyle = `hsl(${hue}, 100%, 65%)`;
-        
-        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-        
-        // mirror bottom glow
-        ctx.fillStyle = `hsla(${hue}, 100%, 65%, 0.4)`;
-        ctx.fillRect(x, canvas.height - barHeight/2, barWidth, barHeight/2);
-        
-        x += barWidth + 1;
-    }
-    
-    // extra waveform line on top
-    analyser.getByteTimeDomainData(dataArray);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#0f0';
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = '#0ff';
+
+    // Wave styling
+    ctx.strokeStyle = "#00ff66";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowBlur = 25;
+    ctx.shadowColor = "#00ff66";
+
     ctx.beginPath();
-    
-    for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[i] / 128;
-        const y = v * canvas.height / 2;
-        i === 0 ? ctx.moveTo(i * (canvas.width / bufferLength), y) : ctx.lineTo(i * (canvas.width / bufferLength), y);
+
+    const slice = canvas.width / data.length;
+
+    for (let i = 0; i < data.length; i++) {
+        const amplitude = (data[i] - 128) / 128;
+        const x = i * slice;
+        const y = canvas.height / 2 + amplitude * canvas.height * 0.35;
+
+        if (i === 0)
+            ctx.moveTo(x, y);
+        else
+            ctx.lineTo(x, y);
     }
+
     ctx.stroke();
-    
+
+    // Prevent the glow from affecting anything else
+    ctx.shadowBlur = 0;
+
     animationFrame = requestAnimationFrame(drawVisualizer);
 }
 
