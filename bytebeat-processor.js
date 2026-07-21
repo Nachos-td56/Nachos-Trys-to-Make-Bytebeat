@@ -16,8 +16,16 @@ class BytebeatProcessor extends AudioWorkletProcessor {
             } else if (data.type === 'init') {
                 this.cleanupGlobals();
                 try {
-                    this.byteFunc = new Function('t', data.helper + data.code);
+                    const factory = new Function('t', data.helper + data.code);
                     this.mode = data.mode;
+                    
+                    // In funcbeat mode, execute the factory wrapper once to store the returned closure step function
+                    if (this.mode === 'funcbeat') {
+                        this.byteFunc = factory();
+                    } else {
+                        this.byteFunc = factory;
+                    }
+
                     this.rate = data.rate;
                     this.vol = data.vol;
                     this.t = 0;
@@ -72,8 +80,8 @@ class BytebeatProcessor extends AudioWorkletProcessor {
 
         try {
             for (let i = 0; i < ch0.length; i++) {
-                // Pass seconds for Floatbeat and Funcbeat modes, or discrete integer ticks for standard Bytebeat
-                let currentT = (this.mode === 'float' || this.mode === 'funcbeat') ? (this.t / this.rate) : Math.floor(this.t);
+                // Pass floating-point seconds for floatbeat, or integer ticks for standard/funcbeat modes
+                let currentT = (this.mode === 'float') ? (this.t / this.rate) : Math.floor(this.t);
 
                 let rawVal = this.byteFunc(currentT);
                 
@@ -81,7 +89,12 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                 let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
                 const normalize = (val) => {
-                    if (this.mode === 'float' || this.mode === 'funcbeat') return val || 0;
+                    if (this.mode === 'float') return val || 0;
+                    if (this.mode === 'funcbeat') {
+                        // Allow floats normalized [-1, 1] directly, or standard 8-bit wrap [0, 255]
+                        if (typeof val === 'number' && val >= -1 && val <= 1) return val;
+                        return ((val & 255) / 128) - 1;
+                    }
                     if (this.mode === 'signed') return (((val & 255) << 24) >> 24) / 128;
                     return ((val & 255) / 128) - 1;
                 };
