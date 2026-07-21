@@ -1,7 +1,7 @@
 class BytebeatProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.alive = true; // Added to track processor lifecycle
+        this.alive = true;
         this.t = 0;
         this.byteFunc = null;
         this.mode = 'byte';
@@ -12,7 +12,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         this.port.onmessage = (e) => {
             const data = e.data;
             if (data.type === 'kill') {
-                this.alive = false; // Flag to shut down in the next process tick
+                this.alive = false;
             } else if (data.type === 'init') {
                 this.cleanupGlobals();
                 try {
@@ -45,20 +45,17 @@ class BytebeatProcessor extends AudioWorkletProcessor {
     }
 
     cleanupGlobals() {
-        // Single letter cleanup
         for (let i = 0; i < 26; ++i) {
-            delete globalThis[String.fromCharCode(65 + i)];   // A-Z
-            delete globalThis[String.fromCharCode(97 + i)];   // a-z
+            delete globalThis[String.fromCharCode(65 + i)];
+            delete globalThis[String.fromCharCode(97 + i)];
         }
 
-        // Extras
         const extras = ['fx','fxi','out','h','mem','etraimMem','callC','etraimC','cca','cn','idx','buf','rmsIdx','gIdx'];
         extras.forEach(k => { try { delete globalThis[k]; } catch(e){} });
         delete globalThis._bbState;
     }
 
     process(inputs, outputs, parameters) {
-        // Explicitly return false if the node has been killed to stop audio processing thread
         if (!this.alive) return false;
 
         const output = outputs[0];
@@ -73,17 +70,18 @@ class BytebeatProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const speed = this.rate / this.sampleRate;
-
         try {
             for (let i = 0; i < ch0.length; i++) {
-                let rawVal = this.byteFunc(Math.floor(this.t));
+                // Pass seconds for Floatbeat and Funcbeat modes, or discrete integer ticks for standard Bytebeat
+                let currentT = (this.mode === 'float' || this.mode === 'funcbeat') ? (this.t / this.rate) : Math.floor(this.t);
+
+                let rawVal = this.byteFunc(currentT);
                 
                 let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
                 let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
                 const normalize = (val) => {
-                    if (this.mode === 'float') return val || 0;
+                    if (this.mode === 'float' || this.mode === 'funcbeat') return val || 0;
                     if (this.mode === 'signed') return (((val & 255) << 24) >> 24) / 128;
                     return ((val & 255) / 128) - 1;
                 };
@@ -91,7 +89,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                 ch0[i] = this.vol * normalize(lVal);
                 ch1[i] = this.vol * normalize(rVal);
 
-                this.t += speed;
+                this.t += (this.rate / this.sampleRate);
             }
         } catch(err) {
             this.port.postMessage({
