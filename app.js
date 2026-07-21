@@ -286,13 +286,13 @@ async function exportWAV(requestedDurationSec = 20) {
                 ${userCode}
             };
             const __step = __init();
-            return (typeof __step === 'function') ? __step : () => (__step || 0);
+            return (typeof __step === 'function') ? (t) => __step(t) : () => (__step || 0);
         `;
     } else {
         finalCode = 'return ' + userCode + ';';
     }
     
-    const factory = new Function(helper + finalCode);
+    const factory = new Function('t', helper + finalCode);
     const evalFunc = (mode === 'funcbeat') ? factory() : factory;
     
     const loopCycleSamples = detectLoopPeriod(evalFunc);
