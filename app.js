@@ -308,7 +308,7 @@ async function exportWAV(requestedDurationSec = 20) {
     const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
     const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
     const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
-    const vol = +volInput.value;
+    const vol = +100;
 
     for (let t = 0; t < sampleCount; t++) {
         let currentT = (mode === 'float') ? t : t;
