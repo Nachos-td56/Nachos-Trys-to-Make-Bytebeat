@@ -35,6 +35,7 @@ const memoryHelper = `
     const lerp = (v0, v1, amt) => v0 + amt * (v1 - v0);
 `;
 
+// Initialized variables to 0 to prevent NaN operations in Floatbeat mode
 const mathHelper = `
     const int=Math.floor, abs=Math.abs, acos=Math.acos, acosh=Math.acosh, asin=Math.asin, asinh=Math.asinh,
           atan=Math.atan, atan2=Math.atan2, atanh=Math.atanh, cbrt=Math.cbrt, ceil=Math.ceil,
@@ -44,7 +45,8 @@ const mathHelper = `
           pow=Math.pow, random=Math.random, round=Math.round, sign=Math.sign, sin=Math.sin,
           sinh=Math.sinh, sqrt=Math.sqrt, tan=Math.tan, tanh=Math.tanh, trunc=Math.trunc,
           pi=Math.PI, PI=Math.PI;
-    let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z;
+    let a=0,b=0,c=0,d=0,e=0,f=0,g=0,h=0,i=0,j=0,k=0,l=0,m=0,n=0,o=0,p=0,q=0,r=0,s=0,u=0,v=0,w=0,x=0,y=0,z=0,
+        A=0,B=0,C=0,D=0,E=0,F=0,G=0,H=0,I=0,J=0,K=0,L=0,M=0,N=0,O=0,P=0,Q=0,R=0,S=0,T=0,U=0,V=0,W=0,X=0,Y=0,Z=0;
 `;
 
 const workletUrl = 'bytebeat-processor.js';
@@ -309,13 +311,14 @@ async function exportWAV(requestedDurationSec = 20) {
     const vol = +volInput.value;
 
     for (let t = 0; t < sampleCount; t++) {
-        let currentT = (mode === 'float') ? (t / targetRate) : t;
+        let currentT = (mode === 'float') ? t : t;
         let rawVal = evalFunc(currentT);
         let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
         let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
         const norm = (v) => {
-            if (mode === 'float') return v || 0;
+            if (v === undefined || isNaN(v)) return 0;
+            if (mode === 'float') return Math.max(-1, Math.min(1, v));
             if (mode === 'funcbeat') {
                 if (typeof v === 'number' && v >= -1 && v <= 1) return v;
                 return ((v & 255) / 128) - 1;
