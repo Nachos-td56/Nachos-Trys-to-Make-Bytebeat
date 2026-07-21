@@ -19,7 +19,6 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                     const factory = new Function('t', data.helper + data.code);
                     this.mode = data.mode;
                     
-                    // In funcbeat mode, execute the factory wrapper once to store the returned closure step function
                     if (this.mode === 'funcbeat') {
                         this.byteFunc = factory();
                     } else {
@@ -80,8 +79,8 @@ class BytebeatProcessor extends AudioWorkletProcessor {
 
         try {
             for (let i = 0; i < ch0.length; i++) {
-                // Pass floating-point seconds for floatbeat, or integer ticks for standard/funcbeat modes
-                let currentT = (this.mode === 'float') ? (this.t / this.rate) : Math.floor(this.t);
+                // Pass exact floating-point t for floatbeat, or floor to int for byte modes
+                let currentT = (this.mode === 'float') ? this.t : Math.floor(this.t);
 
                 let rawVal = this.byteFunc(currentT);
                 
@@ -89,9 +88,13 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                 let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
                 const normalize = (val) => {
-                    if (this.mode === 'float') return val || 0;
+                    if (val === undefined || isNaN(val)) return 0;
+                    
+                    if (this.mode === 'float') {
+                        // Clamp directly between -1.0 and 1.0
+                        return Math.max(-1, Math.min(1, val));
+                    }
                     if (this.mode === 'funcbeat') {
-                        // Allow floats normalized [-1, 1] directly, or standard 8-bit wrap [0, 255]
                         if (typeof val === 'number' && val >= -1 && val <= 1) return val;
                         return ((val & 255) / 128) - 1;
                     }
