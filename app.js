@@ -153,7 +153,7 @@ document.getElementById('play').onclick = async () => {
 
         let code = editor.getValue().trim();
         const mode = modeSelect.value;
-        const helper = memoryHelper + mathHelper; // Math variables globally available
+        const helper = memoryHelper + mathHelper;
 
         let finalCode;
         if (mode === 'funcbeat') {
@@ -162,7 +162,7 @@ document.getElementById('play').onclick = async () => {
                     ${code}
                 };
                 const __step = __init();
-                return (typeof __step === 'function') ? __step(t) : (__step || 0);
+                return (typeof __step === 'function') ? __step : () => (__step || 0);
             `;
         } else {
             finalCode = 'return ' + code + ';';
@@ -258,7 +258,7 @@ function detectLoopPeriod(evalFunc) {
         if (isTruePeriod) {
             let doubleCheck = true;
             for (let offset = 1; offset <= 100; offset++) {
-                if (!getOutputsEqual(t + P * 2 + offset, t + P * 3 + offset)) {
+                if (!getOutputsEqual(offset + P * 2, offset + P * 3)) {
                     doubleCheck = false;
                     break;
                 }
@@ -284,27 +284,14 @@ async function exportWAV(requestedDurationSec = 20) {
                 ${userCode}
             };
             const __step = __init();
-            return (typeof __step === 'function') ? __step(t) : (__step || 0);
+            return (typeof __step === 'function') ? __step : () => (__step || 0);
         `;
     } else {
         finalCode = 'return ' + userCode + ';';
     }
     
-    const evalFunc = new Function('t', `
-        if (!globalThis._bbState) {
-            globalThis._bbState = {
-                sample: new Float32Array(65536),
-                auxiliary: new Float32Array(65536),
-                waveform: new Float32Array(65536),
-                mem: {}
-            };
-        } else {
-            globalThis._bbState.sample.fill(0);
-            globalThis._bbState.auxiliary.fill(0);
-            globalThis._bbState.waveform.fill(0);
-            globalThis._bbState.mem = {};
-        }
-        ` + helper + finalCode);
+    const factory = new Function(helper + finalCode);
+    const evalFunc = (mode === 'funcbeat') ? factory() : factory;
     
     const loopCycleSamples = detectLoopPeriod(evalFunc);
     log(`Detected true song loop period: ${loopCycleSamples} steps.`);
@@ -322,13 +309,17 @@ async function exportWAV(requestedDurationSec = 20) {
     const vol = +volInput.value;
 
     for (let t = 0; t < sampleCount; t++) {
-        let currentT = (mode === 'float' || mode === 'funcbeat') ? (t / targetRate) : t;
+        let currentT = (mode === 'float') ? (t / targetRate) : t;
         let rawVal = evalFunc(currentT);
         let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
         let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
         const norm = (v) => {
-            if (mode === 'float' || mode === 'funcbeat') return v || 0;
+            if (mode === 'float') return v || 0;
+            if (mode === 'funcbeat') {
+                if (typeof v === 'number' && v >= -1 && v <= 1) return v;
+                return ((v & 255) / 128) - 1;
+            }
             if (mode === 'signed') return (((v & 255) << 24) >> 24) / 128;
             return ((v & 255) / 128) - 1;
         };
