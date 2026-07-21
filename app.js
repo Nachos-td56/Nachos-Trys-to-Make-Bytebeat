@@ -134,6 +134,7 @@ document.getElementById('play').onclick = async () => {
         await audioCtx.resume();
 
         if (workletNode) {
+            workletNode.port.postMessage({ type: "resetState" });
             workletNode.port.postMessage({ type: 'kill' });
             workletNode.disconnect();
             workletNode = null;
