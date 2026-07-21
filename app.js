@@ -308,27 +308,50 @@ async function exportWAV(requestedDurationSec = 20) {
     const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
     const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
     const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
-    const vol = 100;
 
+    const norm = (v) => {
+        if (v === undefined || isNaN(v)) return 0;
+        if (mode === 'float') {
+            return Math.max(-1, Math.min(1, v));
+        }
+        if (mode === 'signed') {
+            // Signed bytebeat: converts 8-bit signed (-128 to 127) to [-1.0, 1.0]
+            return (((v & 255) << 24) >> 24) / 128;
+        }
+        if (mode === 'funcbeat') {
+            if (typeof v === 'number' && v >= -1 && v <= 1) return v;
+            return ((v & 255) - 128) / 128;
+        }
+        
+        // Standard Unsigned Bytebeat (0 to 255, center is 128)
+        return ((v & 255) - 128) / 128;
+    };
+
+    let maxPeak = 0;
+
+    // Pass 1: Calculate raw normalized values and track the highest peak
     for (let t = 0; t < sampleCount; t++) {
-        let currentT = (mode === 'float') ? t : t;
-        let rawVal = evalFunc(currentT);
+        let rawVal = evalFunc(t);
         let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
         let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
-        const norm = (v) => {
-            if (v === undefined || isNaN(v)) return 0;
-            if (mode === 'float') return Math.max(-1, Math.min(1, v));
-            if (mode === 'funcbeat') {
-                if (typeof v === 'number' && v >= -1 && v <= 1) return v;
-                return ((v & 255) / 128) - 1;
-            }
-            if (mode === 'signed') return (((v & 255) << 24) >> 24) / 128;
-            return ((v & 255) / 128) - 1;
-        };
+        let normL = norm(lVal);
+        let normR = norm(rVal);
 
-        leftBuffer[t] = vol * norm(lVal);
-        rightBuffer[t] = vol * norm(rVal);
+        leftBuffer[t] = normL;
+        rightBuffer[t] = normR;
+
+        // Keep track of the highest absolute peak across both channels
+        maxPeak = Math.max(maxPeak, Math.abs(normL), Math.abs(normR));
+    }
+
+    // Pass 2: Scale all samples to maximize volume to 100% without clipping
+    if (maxPeak > 0) {
+        const gain = 1.0 / maxPeak;
+        for (let t = 0; t < sampleCount; t++) {
+            leftBuffer[t] *= gain;
+            rightBuffer[t] *= gain;
+        }
     }
 
     const wavBlob = bufferToWavBlob(leftBuffer, rightBuffer, targetRate);
