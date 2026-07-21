@@ -8,11 +8,9 @@ function log(msg) { logEl.textContent = msg; console.log(msg); }
 const canvas = document.getElementById('viz');
 const ctx = canvas.getContext('2d');
 const modeSelect = document.getElementById('mode');
-const styleSelect = document.getElementById('style');
 const rateInput = document.getElementById('rate');
 const volInput = document.getElementById('vol');
 
-// === MOVED TO GLOBAL SCOPE ===
 // Stateful Memory, Bytebeat Math & Clamping Helpers
 const memoryHelper = `
     if (!globalThis._bbState) {
@@ -25,16 +23,16 @@ const memoryHelper = `
     }
 
     const sampleMemory = globalThis._bbState.sample,
-       auxiliaryMemory = globalThis._bbState.auxiliary,
-       waveformMemory = globalThis._bbState.waveform,
-       customMemory = globalThis._bbState.mem;
+          auxiliaryMemory = globalThis._bbState.auxiliary,
+          waveformMemory = globalThis._bbState.waveform,
+          customMemory = globalThis._bbState.mem;
 
-   const clamp = (v, min = -1, max = 1) => Math.min(Math.max(v, min), max);
-   const wrap = (v, min = 0, max = 255) => {
-       const r = max - min + 1;
-       return ((v - min) % r + r) % r + min;
-   };
-   const lerp = (v0, v1, amt) => v0 + amt * (v1 - v0);
+    const clamp = (v, min = -1, max = 1) => Math.min(Math.max(v, min), max);
+    const wrap = (v, min = 0, max = 255) => {
+        const r = max - min + 1;
+        return ((v - min) % r + r) % r + min;
+    };
+    const lerp = (v0, v1, amt) => v0 + amt * (v1 - v0);
 `;
 
 const mathHelper = `
@@ -49,10 +47,8 @@ const mathHelper = `
     let a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,u,v,w,x,y,z,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z;
 `;
 
-// Define the AudioWorklet Processor source code in a string
 const workletUrl = 'bytebeat-processor.js';
 
-// Configure and Load Monaco Editor
 require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.48.0/min/vs' }});
 require(['vs/editor/editor.main'], function() {
     monaco.editor.defineTheme('bytebeat-theme', {
@@ -130,17 +126,13 @@ document.getElementById('play').onclick = async () => {
     try {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-            // Load from separate file
             await audioCtx.audioWorklet.addModule(workletUrl);
-    
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
         }
         
         await audioCtx.resume();
 
-        // Force brand new worklet every time & KILL old processing thread
         if (workletNode) {
             workletNode.port.postMessage({ type: 'kill' });
             workletNode.disconnect();
@@ -153,39 +145,52 @@ document.getElementById('play').onclick = async () => {
             channelCount: 2,
             channelCountMode: 'explicit'
         });
-       
+        
         workletNode.port.onmessage = (e) => {
             if (e.data.type === 'error') log(e.data.message);
         };
 
         let code = editor.getValue().trim();
-        const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
-        const finalCode = styleSelect.value === 'complex' ? code + ';return out||val||0;' : 'return ' + code + ';';
+        const mode = modeSelect.value;
+        const helper = memoryHelper + mathHelper; // Math variables globally available
 
-       await new Promise((resolve) => {
-           const handler = (e) => {
-               if (e.data.type === "stateReset") {
-                   workletNode.port.removeEventListener("message", handler);
-                   resolve();
-               }
-           };
+        let finalCode;
+        if (mode === 'funcbeat') {
+            finalCode = `
+                const __init = () => {
+                    ${code}
+                };
+                const __step = __init();
+                return (typeof __step === 'function') ? __step(t) : (__step || 0);
+            `;
+        } else {
+            finalCode = 'return ' + code + ';';
+        }
 
-           workletNode.port.addEventListener("message", handler);
-           workletNode.port.start();
+        await new Promise((resolve) => {
+            const handler = (e) => {
+                if (e.data.type === "stateReset") {
+                    workletNode.port.removeEventListener("message", handler);
+                    resolve();
+                }
+            };
 
-           workletNode.port.postMessage({
-               type: "resetState"
-           });
-       });
+            workletNode.port.addEventListener("message", handler);
+            workletNode.port.start();
 
-       workletNode.port.postMessage({
-           type: "init",
-           helper: helper,
-           code: finalCode,
-           mode: modeSelect.value,
-           rate: parseFloat(rateInput.value) || 44100,
-           vol: +volInput.value
-       });
+            workletNode.port.postMessage({
+                type: "resetState"
+            });
+        });
+
+        workletNode.port.postMessage({
+            type: "init",
+            helper: helper,
+            code: finalCode,
+            mode: mode,
+            rate: parseFloat(rateInput.value) || 44100,
+            vol: +volInput.value
+        });
 
         workletNode.connect(analyser);
         analyser.connect(audioCtx.destination);
@@ -194,7 +199,7 @@ document.getElementById('play').onclick = async () => {
             audioCtx.destination.channelCount = 2;
             audioCtx.destination.channelCountMode = 'explicit';
         }
-       
+        
         isPlaying = true;
         log("Loaded");
         drawVisualizer();
@@ -206,7 +211,7 @@ document.getElementById('play').onclick = async () => {
 document.getElementById('stop').onclick = () => {
     if (workletNode) {
         workletNode.port.postMessage({ type: "resetState" });
-        workletNode.port.postMessage({ type: 'kill' }); // Explicitly kill processing thread
+        workletNode.port.postMessage({ type: 'kill' });
 
         workletNode.disconnect();
         workletNode = null;
@@ -216,9 +221,7 @@ document.getElementById('stop').onclick = () => {
         cancelAnimationFrame(animationFrame);
 
     isPlaying = false;
-
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
     log("Stopped");
 };
 
@@ -227,13 +230,11 @@ document.getElementById('reset-time').onclick = () => {
 };
 
 function detectLoopPeriod(evalFunc) {
-    // Large loop periods to check (powers of 2 up to ~16.7 million samples / 6 minutes at 44.1kHz)
     const candidates = [];
     for (let power = 12; power <= 24; power++) {
         candidates.push(Math.pow(2, power));
     }
     
-    // Evaluates a test point. Handles both stereophonic arrays and monophonic numbers.
     const getOutputsEqual = (t1, t2) => {
         const val1 = evalFunc(t1);
         const val2 = evalFunc(t2);
@@ -243,8 +244,6 @@ function detectLoopPeriod(evalFunc) {
         return val1 === val2;
     };
 
-    // We must check a wide spread of "probe times" to ensure we aren't tricked 
-    // by small repeating waveforms in the intro or a single silent bar.
     const probePoints = [0, 100, 1000, 8192, 16384, 65536, 131072, 262144];
 
     for (const P of candidates) {
@@ -256,7 +255,6 @@ function detectLoopPeriod(evalFunc) {
             }
         }
         if (isTruePeriod) {
-            // Once a math loop period matches, double-check deep in the timeline to confirm
             let doubleCheck = true;
             for (let offset = 1; offset <= 100; offset++) {
                 if (!getOutputsEqual(t + P * 2 + offset, t + P * 3 + offset)) {
@@ -265,22 +263,32 @@ function detectLoopPeriod(evalFunc) {
                 }
             }
             if (doubleCheck) {
-                return P; // True seamless loop period found!
+                return P;
             }
         }
     }
-    
-    // Fallback if the song has no loop structure or contains random()
     return 262144; 
 }
 
 async function exportWAV(requestedDurationSec = 20) {
     const targetRate = parseFloat(rateInput.value) || 44100;
-    
     const userCode = editor.getValue().trim();
-    const finalCode = styleSelect.value === 'complex' ? userCode + ';return out||val||0;' : 'return ' + userCode + ';';
+    const mode = modeSelect.value;
+    const helper = memoryHelper + mathHelper;
+
+    let finalCode;
+    if (mode === 'funcbeat') {
+        finalCode = `
+            const __init = () => {
+                ${userCode}
+            };
+            const __step = __init();
+            return (typeof __step === 'function') ? __step(t) : (__step || 0);
+        `;
+    } else {
+        finalCode = 'return ' + userCode + ';';
+    }
     
-    const helper = styleSelect.value === 'simple' ? memoryHelper + mathHelper : memoryHelper;
     const evalFunc = new Function('t', `
         if (!globalThis._bbState) {
             globalThis._bbState = {
@@ -295,16 +303,12 @@ async function exportWAV(requestedDurationSec = 20) {
             globalThis._bbState.waveform.fill(0);
             globalThis._bbState.mem = {};
         }
-        ` + helper + finalCode); // Reset state here also
+        ` + helper + finalCode);
     
-    // Run our "robust" macro loop-detector
     const loopCycleSamples = detectLoopPeriod(evalFunc);
     log(`Detected true song loop period: ${loopCycleSamples} steps.`);
     
-    // Determine how many samples the user requested
     const requestedSamples = Math.floor(targetRate * requestedDurationSec);
-    
-    // Round to the nearest complete MACRO cycle
     const cyclesCount = Math.max(1, Math.round(requestedSamples / loopCycleSamples));
     const sampleCount = cyclesCount * loopCycleSamples;
     const actualDurationSec = sampleCount / targetRate;
@@ -312,21 +316,18 @@ async function exportWAV(requestedDurationSec = 20) {
     log(`Exporting ${cyclesCount} complete seamless cycle(s). File length: ${actualDurationSec.toFixed(2)}s.`);
     
     const offlineCtx = new OfflineAudioContext(2, sampleCount, targetRate);
-    
     const leftBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(0);
     const rightBuffer = offlineCtx.createBuffer(2, sampleCount, targetRate).getChannelData(1);
-    
-    const mode = modeSelect.value;
     const vol = +volInput.value;
 
-    // Render the audio
     for (let t = 0; t < sampleCount; t++) {
-        let rawVal = evalFunc(t);
+        let currentT = (mode === 'float' || mode === 'funcbeat') ? (t / targetRate) : t;
+        let rawVal = evalFunc(currentT);
         let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
         let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
 
         const norm = (v) => {
-            if (mode === 'float') return v || 0;
+            if (mode === 'float' || mode === 'funcbeat') return v || 0;
             if (mode === 'signed') return (((v & 255) << 24) >> 24) / 128;
             return ((v & 255) / 128) - 1;
         };
@@ -351,20 +352,10 @@ function bufferToWavBlob(left, right, sampleRate) {
     const blockAlign = numChannels * bytesPerSample;
     const audioDataLength = left.length * blockAlign;
     
-    // Exact sizes for our structured chunks
-    const fmtChunkSize = 16;  // Standard PCM fmt chunk size
-    const smplChunkSize = 68; // 8 bytes (ID + Size) + 60 bytes of payload (36 metadata + 24 loop)
-    
-    // Header structure size:
-    // - 12 bytes: "RIFF" (4) + File Size (4) + "WAVE" (4)
-    // - 8 bytes:  "fmt " ID (4) + chunk size (4)
-    // - 16 bytes: fmt chunk payload
-    // - 8 bytes:  "smpl" ID (4) + chunk size (4)
-    // - 60 bytes: smpl chunk payload (36 sampler metadata + 24 loop info)
-    // - 8 bytes:  "data" ID (4) + chunk size (4)
+    const fmtChunkSize = 16;
+    const smplChunkSize = 68;
     const totalHeaderLength = 12 + (8 + fmtChunkSize) + (8 + (smplChunkSize - 8)) + 8;
     
-    // Allocate the exact size needed (header space + raw audio block size)
     const arrayBuffer = new ArrayBuffer(totalHeaderLength + audioDataLength);
     const view = new DataView(arrayBuffer);
 
@@ -376,7 +367,6 @@ function bufferToWavBlob(left, right, sampleRate) {
 
     /* RIFF Header */
     writeString(offset, 'RIFF');
-    // Total file size after this field (total header bytes minus 8 + audio data)
     view.setUint32(offset + 4, (totalHeaderLength - 8) + audioDataLength, true);
     writeString(offset + 8, 'WAVE');
     offset += 12;
@@ -384,36 +374,34 @@ function bufferToWavBlob(left, right, sampleRate) {
     /* FMT Chunk */
     writeString(offset, 'fmt ');
     view.setUint32(offset + 4, fmtChunkSize, true);
-    view.setUint16(offset + 8, 1, true); // PCM format
+    view.setUint16(offset + 8, 1, true);
     view.setUint16(offset + 10, numChannels, true);
     view.setUint32(offset + 12, sampleRate, true);
     view.setUint32(offset + 16, sampleRate * blockAlign, true);
     view.setUint16(offset + 20, blockAlign, true);
-    view.setUint16(offset + 22, 16, true); // 16 bits per sample
+    view.setUint16(offset + 22, 16, true);
     offset += 8 + fmtChunkSize;
     
-    /* SMPL (Loop) Chunk */
-    writeString(offset, 'smpl');                         // Chunk ID (4 bytes)
-    view.setUint32(offset + 4, smplChunkSize - 8, true); // Chunk payload size (60 bytes)
-    view.setUint32(offset + 8, 0, true);                 // Manufacturer (0 = generic)
-    view.setUint32(offset + 12, 0, true);                // Product (0 = generic)
-    view.setUint32(offset + 16, Math.round(1000000000 / sampleRate), true); // Sample Period in nanoseconds
-    view.setUint32(offset + 20, 60, true);               // MIDI Unity Note (60 = Middle C)
-    view.setUint32(offset + 24, 0, true);                // MIDI Pitch Fraction
-    view.setUint32(offset + 28, 0, true);                // SMPTE Format
-    view.setUint32(offset + 32, 0, true);                // SMPTE Offset
-    view.setUint32(offset + 36, 1, true);                // Sample Loops Count (1 loop)
-    view.setUint32(offset + 40, 0, true);                // Sampler Specific Data size
+    /* SMPL Chunk */
+    writeString(offset, 'smpl');
+    view.setUint32(offset + 4, smplChunkSize - 8, true);
+    view.setUint32(offset + 8, 0, true);
+    view.setUint32(offset + 12, 0, true);
+    view.setUint32(offset + 16, Math.round(1000000000 / sampleRate), true);
+    view.setUint32(offset + 20, 60, true);
+    view.setUint32(offset + 24, 0, true);
+    view.setUint32(offset + 28, 0, true);
+    view.setUint32(offset + 32, 0, true);
+    view.setUint32(offset + 36, 1, true);
+    view.setUint32(offset + 40, 0, true);
 
-    // Loop definition inside 'smpl' (starts at offset + 44)
-    view.setUint32(offset + 44, 0, true);                // Cue Point ID
-    view.setUint32(offset + 48, 0, true);                // Type (0 = Normal forward loop)
-    view.setUint32(offset + 52, 0, true);                // Start sample index
-    view.setUint32(offset + 56, left.length - 1, true);  // End sample index (Loop endpoint)
-    view.setUint32(offset + 60, 0, true);                // Fractional pitch
-    view.setUint32(offset + 64, 0, true);                // Play Count (0 = Infinite loop)
+    view.setUint32(offset + 44, 0, true);
+    view.setUint32(offset + 48, 0, true);
+    view.setUint32(offset + 52, 0, true);
+    view.setUint32(offset + 56, left.length - 1, true);
+    view.setUint32(offset + 60, 0, true);
+    view.setUint32(offset + 64, 0, true);
     
-    // Jump past the entire smpl chunk (8 bytes of header + 60 bytes of payload)
     offset += smplChunkSize;
 
     /* DATA Chunk Header */
@@ -421,12 +409,10 @@ function bufferToWavBlob(left, right, sampleRate) {
     view.setUint32(offset + 4, audioDataLength, true);
     offset += 8;
 
-    /* Write interleaved 16-bit audio samples */
     for (let i = 0; i < left.length; i++) {
         let sL = Math.max(-1, Math.min(1, left[i]));
         let sR = Math.max(-1, Math.min(1, right[i]));
         
-        // Convert floats (-1.0 to 1.0) to 16-bit signed integers
         view.setInt16(offset, sL < 0 ? sL * 0x8000 : sL * 0x7FFF, true);
         view.setInt16(offset + 2, sR < 0 ? sR * 0x8000 : sR * 0x7FFF, true);
         offset += 4;
