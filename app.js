@@ -85,17 +85,24 @@ require(['vs/editor/editor.main'], function() {
     log("Ready...");
 });
 
+let vizData; // Create it once globally
+
 function drawVisualizer() {
     if (!analyser) return;
-    const data = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(data);
+    
+    // Only re-allocate if the fftSize changes
+    if (!vizData || vizData.length !== analyser.fftSize) {
+        vizData = new Uint8Array(analyser.fftSize);
+    }
+    
+    analyser.getByteTimeDomainData(vizData);
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.lineWidth = 3; ctx.strokeStyle = '#0f0'; ctx.shadowBlur = 10; ctx.shadowColor = '#0f0';
     ctx.beginPath();
-    const slice = canvas.width / data.length;
+    const slice = canvas.width / vizData.length;
     let x = 0;
-    for (let i = 0; i < data.length; i++) {
-        const y = (data[i] / 128) * canvas.height / 2;
+    for (let i = 0; i < vizData.length; i++) {
+        const y = (vizData[i] / 128) * canvas.height / 2;
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         x += slice;
     }
