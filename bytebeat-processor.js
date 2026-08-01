@@ -8,6 +8,11 @@ class BytebeatProcessor extends AudioWorkletProcessor {
         this.rate = 48000;
         this.vol = 0.85;
         this.sampleRate = sampleRate;
+        
+        // ADD CACHE VARIABLES
+        this.lastT = -1;
+        this.lastL = 0;
+        this.lastR = 0;
 
         this.port.onmessage = (e) => {
             const data = e.data;
@@ -28,6 +33,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                     this.rate = data.rate;
                     this.vol = data.vol;
                     this.t = 0;
+                    this.lastT = -1; // Reset cache on new code
                 } catch (err) {
                     this.port.postMessage({ type: 'error', message: 'Compilation Error: ' + err.message });
                 }
@@ -37,6 +43,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                 this.vol = data.vol;
             } else if (data.type === 'resetTime') {
                 this.t = 0;
+                this.lastT = -1; // Reset cache
             } else if (data.type === 'resetState') {
                 if (globalThis._bbState) {
                     globalThis._bbState.sample.fill(0);
@@ -46,6 +53,7 @@ class BytebeatProcessor extends AudioWorkletProcessor {
                 }
                 this.cleanupGlobals();
                 this.t = 0;
+                this.lastT = -1; // Reset cache
                 this.port.postMessage({ type: 'stateReset' });
             }
         };
@@ -79,19 +87,30 @@ class BytebeatProcessor extends AudioWorkletProcessor {
 
         try {
             for (let i = 0; i < ch0.length; i++) {
-                // Pass exact floating-point t for floatbeat, or floor to int for byte modes
                 let currentT = (this.mode === 'float') ? this.t : Math.floor(this.t);
 
-                let rawVal = this.byteFunc(currentT);
-                
-                let lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
-                let rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
+                let lVal, rVal;
+
+                // CACHE LOGIC, Only execute the math if t changed
+                if (this.mode !== 'float' && currentT === this.lastT) {
+                    lVal = this.lastL;
+                    rVal = this.lastR;
+                } else {
+                    let rawVal = this.byteFunc(currentT);
+                    lVal = Array.isArray(rawVal) ? rawVal[0] : rawVal;
+                    rVal = Array.isArray(rawVal) ? rawVal[1] : rawVal;
+
+                    if (this.mode !== 'float') {
+                        this.lastT = currentT;
+                        this.lastL = lVal;
+                        this.lastR = rVal;
+                    }
+                }
 
                 const normalize = (val) => {
                     if (val === undefined || isNaN(val)) return 0;
                     
                     if (this.mode === 'float') {
-                        // Clamp directly between -1.0 and 1.0
                         return Math.max(-1, Math.min(1, val));
                     }
                     if (this.mode === 'funcbeat') {
